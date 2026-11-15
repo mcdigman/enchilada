@@ -247,6 +247,7 @@ def test_public_surface_is_pinned():
         "Wheel",
         "WDMGrid",
         "__version__",
+        "decimate",
         "replace",
         "transform",
     ]

@@ -8,6 +8,7 @@ from enchilada.data import L1Data
 from enchilada.domains import Grid, WDMGrid
 from enchilada.ledger import Ledger
 from enchilada.orbits import NumericOrbit, Orbit
+from enchilada.resample import decimate
 from enchilada.translation import transform
 from enchilada.wheel import NoiseOverwrittenWarning, Wheel
 
@@ -29,6 +30,7 @@ __all__ = [
     "Wheel",
     "WDMGrid",
     "__version__",
+    "decimate",
     "replace",
     "transform",
 ]
