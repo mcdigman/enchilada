@@ -13,6 +13,7 @@ Imports scipy lazily; the core package stays NumPy-only.
 from __future__ import annotations
 
 import numpy as np
+from numpy.typing import NDArray
 
 from enchilada.data import L1Data
 
@@ -23,7 +24,7 @@ PASSBAND_FRACTION = 0.8
 """Passband edge as a fraction of the new Nyquist frequency."""
 
 
-def anti_alias_taps(factor: int) -> np.ndarray:
+def anti_alias_taps(factor: int) -> NDArray[np.float64]:
     """FIR coefficients :func:`decimate` uses for ``factor``.
 
     A Kaiser-window low-pass from :func:`scipy.signal.kaiserord` and
@@ -47,7 +48,7 @@ def anti_alias_taps(factor: int) -> np.ndarray:
 def edge_samples(factor: int) -> int:
     """Output samples at each end of a decimated record touched by the filter's
     zero padding: half the filter length, counted in output samples, plus one.
-    About 39 for every ``factor``."""
+    It is 40 for every ``factor``."""
     return (anti_alias_taps(factor).size // 2) // factor + 1
 
 

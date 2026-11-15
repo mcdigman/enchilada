@@ -17,6 +17,7 @@ FS = 4.0
 class StubOrbit:
     nominal_arm_length_m = 2.5e9
     transfer_frequency_hz = 0.019
+    time_range_gps = (T0 - 1.0, T0 + 1.0e6)
 
     def positions(self, times_gps):
         raise NotImplementedError
@@ -107,7 +108,9 @@ def test_refuses_bad_factors(factor, error):
 
 
 def test_refuses_a_record_shorter_than_the_filter():
-    with pytest.raises(ValueError, match="shorter than"):
+    with pytest.raises(
+        ValueError, match=r"record of 100 samples is shorter than the \d+-tap"
+    ):
         decimate(make_data({"A": np.zeros(100)}), 8)
 
 

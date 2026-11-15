@@ -244,7 +244,7 @@ def anti_alias_taps(factor: int) -> np.ndarray:
 def edge_samples(factor: int) -> int:
     """Output samples at each end of a decimated record touched by the filter's
     zero padding: half the filter length, counted in output samples, plus one.
-    About 39 for every ``factor``."""
+    It is 40 for every ``factor``."""
     return (anti_alias_taps(factor).size // 2) // factor + 1
 
 
@@ -343,7 +343,7 @@ In `tests/test_typing.py::test_public_surface_is_pinned` make the pinned list en
 - [ ] **Step 5: Run the tests and the linters**
 
 Run: `.venv/bin/python -m pytest tests/test_resample.py tests/test_typing.py -q`
-Expected: all pass (11 resample tests plus the typing file).
+Expected: all pass (12 resample tests plus the typing file).
 
 Run: `.venv/bin/python -m ruff check src tests && .venv/bin/python -m ruff format --check src tests && .venv/bin/python -m mypy`
 Expected: no findings, "Success: no issues found".
@@ -1105,7 +1105,7 @@ new Nyquist frequency and stopband edge at the new Nyquist (about
 `78 * factor` taps), applied zero-phase by polyphase filtering. The result has
 `ceil(N / factor)` samples at `fs / factor` and the same `start_time_gps`,
 because output sample `k` sits at input sample `k * factor`. The first and
-last `enchilada.resample.edge_samples(factor)` output samples (about 39) carry
+last `enchilada.resample.edge_samples(factor)` output samples (40) carry
 the filter's edge transient; nothing is trimmed. The DDPC's own 0.4 Hz bricks
 start 50.5 s after the 4 Hz data, so decimated output does not line up sample
 for sample with them. See

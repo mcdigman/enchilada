@@ -144,11 +144,13 @@ def decimate(data: L1Data, factor: int) -> L1Data: ...
   sample `k * factor`, so `start_time_gps` is unchanged. Output length is
   `ceil(N / factor)`.
 - **Edge transient.** Half the filter length, i.e. about `39 * factor` input
-  samples or 39 output samples at each end, is affected by the zero padding.
+  samples or 40 output samples at each end, is affected by the zero padding.
   The docstring states this number. Nothing is trimmed, so the grid stays
   predictable; a campaign that cares trims and re-slices itself.
 - **Minimum length.** If `N` is shorter than the filter length, refuse with
-  `ValueError` giving both numbers, rather than return transient-only output.
+  `ValueError` giving both numbers: the polyphase filter cannot be applied to
+  a record it does not span. Clean interior samples additionally need `N` of
+  at least `2 * edge_samples(factor) * factor`; that is the caller's call.
 - **Output.** A new `L1Data` with `sample_rate_hz = fs / factor`,
   `num_time_samples = ceil(N / factor)`, the same `start_time_gps`,
   `channel_names` order, `tdi_generation`, `physical_observable`, and the same
