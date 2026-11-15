@@ -245,7 +245,8 @@ Cases:
 ### 7.3 Example test
 
 `tests/test_examples.py` gains a test that runs
-`examples/load_mojito.py`'s `main(path)` on the synthetic fixture and checks
+`examples/load_mojito.py`'s `main(path, duration_s=1000.0, factor=4)` on the
+  synthetic fixture (the one-day default exceeds the fixture) and checks
 the printed grid line; skipped without h5py and scipy.
 
 ## 8. Example and documentation

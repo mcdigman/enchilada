@@ -353,8 +353,10 @@ def test_load_mojito_example_reads_a_synthetic_file(tmp_path, capsys):
     assert data.num_time_samples == 1000
     assert data.sample_rate_hz == 1.0
     out = capsys.readouterr().out
-    for fragment in ("native grid", "decimated grid", "rms", "orbit span"):
+    for fragment in ("native grid", "decimated grid", "orbit span"):
         assert fragment in out, out
+    for name in data.channel_names:
+        assert f"  {name}: rms" in out, out
     proc = subprocess.run(
         [sys.executable, str(EXAMPLES / "load_mojito.py")],
         capture_output=True,

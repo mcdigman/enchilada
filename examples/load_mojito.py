@@ -23,8 +23,12 @@ def main(path, *, duration_s=86400.0, factor=10):
     print(f"native grid: {native.grid}")
     print(f"decimated grid: {data.grid} (t0 = {data.t0} s on the file's TCB clock)")
     for name in data.channel_names:
+        native_rms = float(np.sqrt(np.mean(native.channel_data[name] ** 2)))
         rms = float(np.sqrt(np.mean(data.channel_data[name] ** 2)))
-        print(f"  {name}: rms {rms:.3e} (fractional frequency)")
+        print(
+            f"  {name}: rms {native_rms:.3e} native, {rms:.3e} decimated "
+            f"(fractional frequency; the decimated record keeps its edge samples)"
+        )
     first, last = data.orbit_ephemeris.time_range_gps
     print(f"orbit span: {first:.3f} to {last:.3f} s")
     return data

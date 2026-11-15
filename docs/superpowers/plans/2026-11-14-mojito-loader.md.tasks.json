@@ -21,12 +21,13 @@
     {
       "id": 3,
       "subject": "Task 3: Example script with a skip-safe test",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** `examples/load_mojito.py` loads one day, decimates and prints a summary, and its test runs on the synthetic fixture so no real file is needed.\n\n**Files:**\n- Create: `examples/load_mojito.py`\n- Modify: `tests/test_examples.py` (append one test)\n\n**Acceptance Criteria:**\n- [ ] `main(path, duration_s=1000.0, factor=4)` on the synthetic file returns an `L1Data` with 1000 samples at 1.0 Hz and prints lines containing `native grid`, `decimated grid`, `rms` per channel and `orbit span`.\n- [ ] Running the script without an argument and without `ENCHILADA_MOJITO_L1` exits with a usage message and a nonzero status.\n- [ ] The test skips when h5py or scipy is absent.\n\n**Verify:** `.venv/bin/python -m pytest tests/test_examples.py -q -k mojito` \u2192 1 passed; `.venv/bin/python examples/load_mojito.py` \u2192 exits 1 with the usage line; ruff clean on `examples`.\n\nFull steps with code: `docs/superpowers/plans/2026-11-14-mojito-loader.md` \u2192 \"### Task 3: Example script with a skip-safe test\".\n\n```json:metadata\n{\n  \"planPath\": \"docs/superpowers/plans/2026-11-14-mojito-loader.md\",\n  \"taskNumber\": 3,\n  \"files\": [\n    \"examples/load_mojito.py\",\n    \"tests/test_examples.py\"\n  ],\n  \"acceptanceCriteria\": [\n    \"`main(path, duration_s=1000.0, factor=4)` on the synthetic file returns an `L1Data` with 1000 samples at 1.0 Hz and prints lines containing `native grid`, `decimated grid`, `rms` per channel and `orbit span`.\",\n    \"Running the script without an argument and without `ENCHILADA_MOJITO_L1` exits with a usage message and a nonzero status.\",\n    \"The test skips when h5py or scipy is absent.\"\n  ],\n  \"verifyCommand\": \".venv/bin/python -m pytest tests/test_examples.py -q -k mojito && .venv/bin/python -m ruff check src tests examples && .venv/bin/python -m ruff format --check src tests examples\",\n  \"modelTier\": \"mechanical\",\n  \"userGate\": false\n}\n```",
       "blockedBy": [
         1,
         2
-      ]
+      ],
+      "lastUpdated": "2026-11-15T02:52:26Z"
     },
     {
       "id": 4,
@@ -40,5 +41,5 @@
       ]
     }
   ],
-  "lastUpdated": "2026-11-15T02:31:01Z"
+  "lastUpdated": "2026-11-15T02:52:26Z"
 }
