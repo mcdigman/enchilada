@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -748,6 +748,10 @@ dependencies = [
 examples = [
     { name = "jupyterlab" },
 ]
+mojito = [
+    { name = "h5py" },
+    { name = "scipy" },
+]
 numeric-orbits = [
     { name = "h5py" },
     { name = "lisaorbits" },
@@ -764,13 +768,15 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "h5py", marker = "extra == 'mojito'", specifier = ">=3.0" },
     { name = "h5py", marker = "extra == 'numeric-orbits'", specifier = ">=3.0" },
     { name = "jupyterlab", marker = "extra == 'examples'", specifier = ">=4" },
     { name = "lisaorbits", marker = "extra == 'numeric-orbits'", specifier = ">=3.0.3" },
     { name = "numpy", specifier = ">=1.26.4" },
+    { name = "scipy", marker = "extra == 'mojito'", specifier = ">=1.8" },
     { name = "scipy", marker = "extra == 'numeric-orbits'", specifier = ">=1.8" },
 ]
-provides-extras = ["numeric-orbits", "examples"]
+provides-extras = ["numeric-orbits", "mojito", "examples"]
 
 [package.metadata.requires-dev]
 dev = [
