@@ -52,7 +52,7 @@ needs the `numeric-orbits` extra; reading Mojito L1 files and decimating
 
 ```sh
 uv sync --extra numeric-orbits   # adds h5py, scipy, lisaorbits
-uv sync --extra mojito           # adds h5py, scipy (no lisaorbits)
+uv sync --extra mojito           # or this: adds h5py, scipy (no lisaorbits)
 
 # For the notebooks, install the orbit and example extras together:
 uv sync --extra numeric-orbits --extra examples
@@ -576,8 +576,9 @@ The constellation ephemeris the data was produced with rides on
 `L1Data.orbit_ephemeris` so every block builds its response from the *same*
 spacecraft positions. `enchilada.orbits.NumericOrbit` tabulates and
 cubic-spline-interpolates an ephemeris, with loaders for LDC/Mojito-style
-HDF5 files (`from_hdf5`) and lisaorbits objects (`from_lisaorbits`); both
-need the `numeric-orbits` extra.
+HDF5 files (`from_hdf5`, which needs h5py and scipy from either the
+`numeric-orbits` or the `mojito` extra) and lisaorbits objects
+(`from_lisaorbits`, which needs `numeric-orbits`).
 
 `Orbit` exposes `nominal_arm_length_m`, `transfer_frequency_hz`, and
 `positions(times_gps)`. `NumericOrbit.time_range_gps` gives the tabulated span,
@@ -616,7 +617,9 @@ conventions.
 ## Loading Mojito L1 data
 
 `enchilada.mojito.load_mojito_l1` reads a DDPC Mojito L1 HDF5 file (Common
-Dataset 1, Light and Heavy) into a time-domain `L1Data`, and
+Dataset 1; verified on Mojito Light, and Mojito Heavy shares the layout but
+its flagged gaps must be excluded from the window) into a time-domain
+`L1Data`, and
 `enchilada.resample.decimate` reduces the 4 Hz record to a rate a campaign can
 run at. Both need the `mojito` extra.
 
@@ -639,9 +642,11 @@ Conventions the loader fixes:
   result `physical_observable="fractional_frequency"`, so templates in the
   usual fractional-frequency convention need no scaling. `tdi_generation` is
   `"2.0"`.
-- **Clock.** `start_time_gps` is `t0 + n0 * dt` from `tdis/sampling`, on the
-  file's clock: TCB seconds after the LISA reference epoch, not GPS. The orbit
-  table is on the same clock, so the span check and block response code agree.
+- **Clock.** `start_time_gps` is `t0 + n0 * dt` from `tdis/sampling`, with
+  `n0` the start offset in samples, on the file's clock: TCB seconds after the
+  LISA reference epoch, not GPS. The orbit table is on the same clock, so
+  `L1Data`'s orbit-span check and the blocks' response computations see one
+  clock.
 - **Window.** The start offset rounds to the nearest sample and the duration
   rounds down to whole samples; a window outside the file is refused with the
   file's span in the message.
@@ -674,8 +679,8 @@ for the current API, and the [translation notebook](examples/domain_translation.
 for converting data and block states between representations.
 
 ```sh
-uv sync --extra numeric-orbits   # dev group (pytest, pytest-cov, ruff, mypy)
-uv run --no-sync pytest                    # full suite, incl. examples and orbit loaders
+uv sync --extra numeric-orbits --extra mojito   # dev group (pytest, pytest-cov, ruff, mypy)
+uv run --no-sync pytest                    # full suite, incl. examples, orbit and Mojito loaders
 uv run --no-sync pytest --cov --cov-report=term-missing   # coverage (gate: 95%)
 uv run --no-sync mypy                      # enchilada ships py.typed; keep it honest
 uv run --no-sync ruff check src tests examples benchmarks
@@ -686,7 +691,7 @@ CI runs lint, formatting, mypy, the suite behind a 95% coverage gate, artifact
 builds, and an installed-wheel smoke test across Python 3.12/3.13 on Linux and
 macOS, with core-only checks through Python 3.14. A separate Python 3.12 job tests
 the core at NumPy 1.26.4 without orbit dependencies; another job resolves the
-numeric-orbit dependency floors. The optional WDM integration job installs a
+numeric-orbit and mojito dependency floors. The optional WDM integration job installs a
 pinned backend revision and runs the numerical and notebook checks. Tag pushes
 matching `v*` run these gates before PyPI Trusted Publishing. Manual release
 dispatches build and validate artifacts without publishing, including on tags. See

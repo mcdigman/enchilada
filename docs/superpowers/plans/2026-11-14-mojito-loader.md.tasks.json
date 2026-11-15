@@ -32,14 +32,15 @@
     {
       "id": 4,
       "subject": "Task 4: Packaging, CI and documentation",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** The `mojito` extra exists and is locked, CI installs it where it installs `numeric-orbits`, and README and CHANGELOG describe the loader and `decimate`.\n\n**Files:**\n- Modify: `pyproject.toml:45-50` (optional dependencies)\n- Modify: `uv.lock` (regenerate)\n- Modify: `.github/workflows/ci.yml:35,123,156` and `.github/workflows/release.yml:41,105,163`\n- Modify: `README.md` (install section after line 53; new section before `## Development`; the gap-mask bullet in Known limitations)\n- Modify: `CHANGELOG.md:9-15` (0.4.0 Added)\n- Modify: `tests/test_docs.py:51-56` (`_CALLABLES`)\n\n**Acceptance Criteria:**\n- [ ] `pyproject.toml` has `mojito = [\"h5py>=3.0\", \"scipy>=1.8\"]` and `uv.lock` lists the extra (`uv lock --check` passes).\n- [ ] Every `uv sync ... --extra numeric-orbits` in `ci.yml` and `release.yml` also passes `--extra mojito`.\n- [ ] README has a \"Loading Mojito L1 data\" section with a non-runnable Python block calling `load_mojito_l1(..., channels=..., start_offset_s=..., duration_s=...)` and `decimate(...)`, the install line, and the limitation sentence; `tests/test_docs.py` and `tests/test_packaging_docs.py` pass with `load_mojito_l1` and `decimate` added to `_CALLABLES`.\n- [ ] CHANGELOG 0.4.0 Added lists `load_mojito_l1`, `decimate` and the `mojito` extra.\n- [ ] Full suite passes with coverage at or above 95 %.\n\n**Verify:** `MPLBACKEND=Agg .venv/bin/python -m pytest -q --cov=enchilada` \u2192 0 failed, TOTAL \u2265 95 %; `uv lock --check` \u2192 no changes; ruff (incl. `examples benchmarks`) and mypy clean.\n\nFull steps with code: `docs/superpowers/plans/2026-11-14-mojito-loader.md` \u2192 \"### Task 4: Packaging, CI and documentation\".\n\n```json:metadata\n{\n  \"planPath\": \"docs/superpowers/plans/2026-11-14-mojito-loader.md\",\n  \"taskNumber\": 4,\n  \"files\": [\n    \"pyproject.toml\",\n    \"uv.lock\",\n    \".github/workflows/ci.yml\",\n    \".github/workflows/release.yml\",\n    \"README.md\",\n    \"CHANGELOG.md\",\n    \"tests/test_docs.py\"\n  ],\n  \"acceptanceCriteria\": [\n    \"`pyproject.toml` has `mojito = [\\\"h5py>=3.0\\\", \\\"scipy>=1.8\\\"]` and `uv.lock` lists the extra (`uv lock --check` passes).\",\n    \"Every `uv sync ... --extra numeric-orbits` in `ci.yml` and `release.yml` also passes `--extra mojito`.\",\n    \"README has a \\\"Loading Mojito L1 data\\\" section with a non-runnable Python block calling `load_mojito_l1(..., channels=..., start_offset_s=..., duration_s=...)` and `decimate(...)`, the install line, and the limitation sentence; `tests/test_docs.py` and `tests/test_packaging_docs.py` pass with `load_mojito_l1` and `decimate` added to `_CALLABLES`.\",\n    \"CHANGELOG 0.4.0 Added lists `load_mojito_l1`, `decimate` and the `mojito` extra.\",\n    \"Full suite passes with coverage at or above 95 %.\"\n  ],\n  \"verifyCommand\": \"MPLBACKEND=Agg .venv/bin/python -m pytest -q --cov=enchilada && uv lock --check && .venv/bin/python -m ruff check src tests examples benchmarks && .venv/bin/python -m ruff format --check src tests examples benchmarks && .venv/bin/python -m mypy\",\n  \"modelTier\": \"standard\",\n  \"userGate\": false\n}\n```",
       "blockedBy": [
         1,
         2,
         3
-      ]
+      ],
+      "lastUpdated": "2026-11-15T03:22:01Z"
     }
   ],
-  "lastUpdated": "2026-11-15T02:52:26Z"
+  "lastUpdated": "2026-11-15T03:22:01Z"
 }

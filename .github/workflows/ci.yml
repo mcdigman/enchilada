@@ -108,7 +108,7 @@ jobs:
       - name: Test the core minimum
         run: uv run --no-sync pytest -q
 
-  # Keep the numeric-orbits minimum resolution separate from the core floor.
+  # Keep the extras' minimum resolution separate from the core floor.
   floors:
     runs-on: ubuntu-latest
     steps:

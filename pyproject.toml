@@ -101,7 +101,7 @@ warn_redundant_casts = true
 
 [[tool.mypy.overrides]]
 # scipy and h5py ship no type information; they are lazily imported behind the
-# numeric-orbits extra and their use here is narrow.
+# numeric-orbits and mojito extras and their use here is narrow.
 module = ["scipy.*", "h5py.*"]
 ignore_missing_imports = true
 
