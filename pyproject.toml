@@ -48,6 +48,10 @@ numeric-orbits = [
     "lisaorbits>=3.0.3",  # sets the >=3.12 python floor
     "scipy>=1.8",         # scipy.interpolate.CubicSpline only
 ]
+mojito = [
+    "h5py>=3.0",          # load_mojito_l1 reads the L1 file
+    "scipy>=1.8",         # decimate (scipy.signal) and the attached NumericOrbit
+]
 examples = [
     "jupyterlab>=4",
 ]

@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 import enchilada
-from enchilada import BlockState, L1Data, Wheel
+from enchilada import BlockState, L1Data, Wheel, decimate, load_mojito_l1
 
 README = Path(__file__).resolve().parent.parent / "README.md"
 
@@ -52,6 +52,8 @@ _CALLABLES = {
     "BlockState": BlockState,
     "L1Data": L1Data,
     "Wheel": Wheel,
+    "decimate": decimate,
+    "load_mojito_l1": load_mojito_l1,
     "check_block": None,  # filled below; testing imports lazily
 }
 

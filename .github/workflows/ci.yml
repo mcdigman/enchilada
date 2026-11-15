@@ -32,7 +32,7 @@ jobs:
       - name: Install (locked, with extras and dev group)
         # --locked fails fast if uv.lock has drifted from pyproject.toml, so CI
         # never passes against a resolution contributors do not get locally
-        run: uv sync --locked --extra numeric-orbits
+        run: uv sync --locked --extra numeric-orbits --extra mojito
       - name: Lint
         run: uv run --no-sync ruff check src tests examples benchmarks
       - name: Format
@@ -120,7 +120,7 @@ jobs:
           version: ${{ env.UV_VERSION }}
           python-version: "3.12"
       - name: Resolve to the declared lower bounds
-        run: uv sync --resolution lowest-direct --extra numeric-orbits
+        run: uv sync --resolution lowest-direct --extra numeric-orbits --extra mojito
       - name: Test the resolved minimum versions
         # A plain uv run would re-resolve using the default highest strategy.
         run: uv run --no-sync pytest -q
@@ -153,5 +153,5 @@ jobs:
       - name: Run the packaged suite against the packaged source
         working-directory: ${{ runner.temp }}/from-sdist
         run: |
-          uv sync --extra numeric-orbits
+          uv sync --extra numeric-orbits --extra mojito
           uv run --no-sync pytest -q
