@@ -93,7 +93,12 @@ Behaviour, in the order the function performs it:
    whose dataset is missing from the file raises `ValueError` naming the
    dataset path. Duplicates are refused by `L1Data` itself. `tdi_generation`
    is `"2.0"`.
-4. **Check flags.** Read `tdis/tdi_flags[n0 : n0 + count]`. Any nonzero value
+4. **Check flags.** Every dataset about to be read (`tdis/tdi_flags` and each
+   requested channel) must have shape `(size,)`; otherwise refuse with
+   `ValueError` naming the dataset, its shape and `size`, because h5py clips
+   an over-long slice silently and a short record would pass the flag gate
+   unchecked. `laser_frequency` must be a positive finite number, else
+   `ValueError`. Then read `tdis/tdi_flags[n0 : n0 + count]`. Any nonzero value
    raises `ValueError` with the count of flagged samples and the index of the
    first one (relative to the file), and says enchilada carries no gap mask.
    Nothing is returned partially.
@@ -206,6 +211,9 @@ Cases:
   the file span; a zero-length window is refused.
 - rate: `sample_rate_hz == fs`; a file with inconsistent `dt`/`fs` attrs is
   refused.
+- consistency: a `size` attribute larger than the datasets, a `tdi_flags` or
+  channel dataset shorter than `size`, and a zero `laser_frequency` are each
+  refused with `ValueError` naming the offending quantity.
 - flags: the flagged fixture raises `ValueError` mentioning the count and the
   first flagged index; a window that excludes the flagged sample loads.
 - orbit: `orbit=True` attaches a `NumericOrbit` whose `time_range_gps` covers
@@ -214,7 +222,9 @@ Cases:
 - real file, opt-in: when `ENCHILADA_MOJITO_L1` names a file, load one hour
   of A/E/T with the orbit and assert 14400 samples at 4 Hz, `start_time_gps`
   equal to the file's `t0`, every channel RMS between 1e-19 and 1e-17, A equal
-  to (Z − X)/√2 of a second load of X/Y/Z to 1e-12 relative, the orbit span
+  to (Z − X)/√2 of a second load of X/Y/Z to 1e-12 of the signal scale
+  (`rtol=1e-12` with `atol=1e-12 * max|A|`, since a pure relative test fails
+  at zero crossings by float64 rounding alone), the orbit span
   covering the data, and `decimate(data, 10)` giving 1440 samples at 0.4 Hz.
   Skips otherwise.
 

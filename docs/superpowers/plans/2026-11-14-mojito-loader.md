@@ -380,7 +380,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - [ ] A file whose `fs` attribute disagrees with `dt` raises `ValueError` mentioning both.
 - [ ] A window containing a flagged sample raises `ValueError` with the flagged count and the file index of the first; a window excluding it loads.
 - [ ] `orbit=True` attaches a `NumericOrbit` with the table's `time_range_gps` and positions in the ecliptic frame; `orbit=False` gives `None`.
-- [ ] With `ENCHILADA_MOJITO_L1` set, one hour of the real file gives 14400 samples at 4 Hz starting at the file `t0`, channel RMS between 1e-19 and 1e-17, `A == (Z - X)/sqrt(2)` to 1e-12 relative, orbit coverage, and `decimate(data, 10)` with 1440 samples at 0.4 Hz; the test skips otherwise.
+- [ ] With `ENCHILADA_MOJITO_L1` set, one hour of the real file gives 14400 samples at 4 Hz starting at the file `t0`, channel RMS between 1e-19 and 1e-17, `A == (Z - X)/sqrt(2)` to 1e-12 of the signal scale (`rtol=1e-12`, `atol=1e-12 * max|A|`), orbit coverage, and `decimate(data, 10)` with 1440 samples at 0.4 Hz; the test skips otherwise.
 - [ ] `from enchilada import load_mojito_l1` works and the `__all__` pin includes it.
 
 **Verify:** `.venv/bin/python -m pytest tests/test_mojito.py tests/test_typing.py -q` → all pass (one skipped without the env var); `ENCHILADA_MOJITO_L1="/Users/aaron/Documents/lisa/mojito_data/mojito_light_731d_0.25s_L1_0_0_20251218T000909441368Z(1).h5" .venv/bin/python -m pytest tests/test_mojito.py -q -k real_file` → 1 passed; ruff and mypy clean.
@@ -641,7 +641,10 @@ def test_real_file_one_hour_window():
         assert 1e-19 < rms < 1e-17, (name, rms)
     xyz = load_mojito_l1(REAL_FILE, channels=("X", "Y", "Z"), duration_s=3600.0, orbit=False)
     expected_a = (xyz.channel_data["Z"] - xyz.channel_data["X"]) / np.sqrt(2.0)
-    np.testing.assert_allclose(data.channel_data["A"], expected_a, rtol=1e-12, atol=0.0)
+    # A pure relative test fails at zero crossings by float64 rounding alone.
+    np.testing.assert_allclose(
+        data.channel_data["A"], expected_a, rtol=1e-12, atol=1e-12 * np.max(np.abs(expected_a))
+    )
     first, last = data.orbit_ephemeris.time_range_gps
     assert first <= data.t0 and last >= data.t0 + (data.N - 1) * data.dt
     coarse = decimate(data, 10)
