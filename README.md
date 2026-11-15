@@ -511,7 +511,7 @@ Scientific shorthand is part of the API:
 | --- | --- | --- |
 | Sample rate in Hz | `sample_rate_hz` | `fs` |
 | Time sample count | `num_time_samples` | `N` |
-| Start time in GPS seconds | `start_time_gps` | `t0` |
+| Start time in seconds (GPS by convention; see the Mojito section for TCB) | `start_time_gps` | `t0` |
 | Observation duration in seconds | `observation_duration_s` | `Tobs` |
 | Sample interval in seconds | `sample_interval_s` | `dt` |
 | Fourier bin width in Hz | `frequency_resolution_hz` | `df` |
@@ -649,7 +649,9 @@ Conventions the loader fixes:
   clock.
 - **Window.** The start offset rounds to the nearest sample and the duration
   rounds down to whole samples; a window outside the file is refused with the
-  file's span in the message.
+  file's span in the message. Omitting `duration_s` reads to the end of the
+  file, which for the full Mojito Light record is about 2 GB per channel at
+  the native 4 Hz; choose a window and decimate it.
 - **Flags.** Any nonzero `tdi_flags` value in the window is refused, with the
   count and the first flagged sample; enchilada has no gap mask (see
   [Known limitations](#known-limitations)). Mojito Light sets no flags.

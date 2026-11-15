@@ -384,7 +384,7 @@ class TestRemainingValidationBranches:
             replace(observed, num_time_samples=8.0)  # float is not an int
 
     def test_start_time_gps_must_be_finite(self, observed):
-        with pytest.raises(ValueError, match="start_time_gps must be finite"):
+        with pytest.raises(ValueError, match="start_time_gps must be a finite"):
             replace(observed, start_time_gps=float("nan"))
 
     def test_tdi_generation_must_be_a_non_empty_string(self, observed):

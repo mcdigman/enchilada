@@ -156,6 +156,38 @@ def test_nonpositive_laser_frequency_is_refused(tmp_path):
         load_mojito_l1(path, orbit=False)
 
 
+@pytest.mark.parametrize(
+    ("member", "message"),
+    [
+        ("tdis/sampling", "has no tdis/sampling group"),
+        ("tdis/tdi_flags", "has no dataset tdis/tdi_flags"),
+        ("laser_frequency", "has no root attribute laser_frequency"),
+    ],
+)
+def test_missing_mojito_layout_is_named(tmp_path, member, message):
+    import h5py
+
+    path = tmp_path / "m.h5"
+    write_mojito_file(path)
+    with h5py.File(path, "r+") as f:
+        if member == "laser_frequency":
+            del f.attrs[member]
+        else:
+            del f[member]
+    with pytest.raises(ValueError, match=message):
+        load_mojito_l1(path, orbit=False)
+
+
+def test_file_without_tdis_is_refused_as_not_mojito(tmp_path):
+    import h5py
+
+    path = tmp_path / "other.h5"
+    with h5py.File(path, "w") as f:
+        f.create_dataset("unrelated", data=np.arange(3))
+    with pytest.raises(ValueError, match="is it a Mojito L1 file"):
+        load_mojito_l1(path)
+
+
 def test_flagged_samples_are_refused(tmp_path):
     path = tmp_path / "flagged.h5"
     write_mojito_file(path, flag_index=2000)

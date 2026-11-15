@@ -98,7 +98,9 @@ def load_mojito_l1(
         start_offset_s: Seconds after the file's first sample; rounds to the
             nearest sample.
         duration_s: Window length in seconds, rounded down to whole samples;
-            None reads to the end of the file.
+            None reads to the end of the file. On the full Mojito Light record
+            that is about 252 million float64 samples per channel, 2 GB each;
+            prefer a window.
         orbit: Attach the file's ``orbits`` table as a `NumericOrbit`
             (BCRS positions rotated to the ecliptic frame).
 
@@ -109,7 +111,9 @@ def load_mojito_l1(
         t0 + first_sample * dt`` on the file's TCB clock.
 
     Raises:
-        ValueError: unknown or missing channel, a window outside the file,
+        ValueError: unknown or missing channel, a file without the Mojito
+            layout (no ``tdis/sampling`` group, ``tdis/tdi_flags`` dataset or
+            root attribute ``laser_frequency``), a window outside the file,
             ``dt`` and ``fs`` attributes that disagree, a ``tdi_flags`` or
             channel dataset whose length differs from the ``size`` attribute,
             a ``laser_frequency`` that is not positive and finite, or any
@@ -127,6 +131,11 @@ def load_mojito_l1(
         )
     file_path = os.fspath(path)
     with h5py.File(file_path, "r") as file:
+        if "tdis/sampling" not in file:
+            raise ValueError(
+                f"{file_path} has no tdis/sampling group; is it a Mojito L1 file? "
+                f"Top-level members: {sorted(file)}"
+            )
         sampling = file["tdis/sampling"].attrs
         t0 = float(sampling["t0"])
         dt = float(sampling["dt"])
@@ -138,6 +147,12 @@ def load_mojito_l1(
                 f"give dt * fs = {dt * fs}, expected 1"
             )
         first, count = _resolve_window(t0, dt, size, start_offset_s, duration_s)
+        if "laser_frequency" not in file.attrs:
+            raise ValueError(
+                f"{file_path} has no root attribute laser_frequency, needed to "
+                f"convert Hz to fractional frequency; root attributes: "
+                f"{sorted(file.attrs)}"
+            )
         laser_frequency_hz = float(file.attrs["laser_frequency"])
         if not (math.isfinite(laser_frequency_hz) and laser_frequency_hz > 0.0):
             raise ValueError(
@@ -145,6 +160,11 @@ def load_mojito_l1(
                 f"frequency in Hz, got {laser_frequency_hz}"
             )
         window = slice(first, first + count)
+        if "tdis/tdi_flags" not in file:
+            raise ValueError(
+                f"{file_path} has no dataset tdis/tdi_flags; the tdis group holds "
+                f"{sorted(file['tdis'])}"
+            )
         _check_length(file, "tdis/tdi_flags", size)
         flagged = np.flatnonzero(np.asarray(file["tdis/tdi_flags"][window]))
         if flagged.size:
