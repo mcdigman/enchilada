@@ -114,6 +114,48 @@ def test_inconsistent_rate_attributes_are_refused(tmp_path):
         load_mojito_l1(path, orbit=False)
 
 
+def test_size_attribute_larger_than_the_datasets_is_refused(tmp_path):
+    path = tmp_path / "m.h5"
+    write_mojito_file(path, size=5000)
+    with pytest.raises(
+        ValueError,
+        match=r"tdis/tdi_flags has shape \(4096,\) but tdis/sampling says size = 5000",
+    ):
+        load_mojito_l1(path, duration_s=1000.0)
+
+
+def _shorten_dataset(path, name, dtype):
+    """Replace ``tdis/<name>`` with 100 zeros, leaving the size attribute alone."""
+    import h5py
+
+    with h5py.File(path, "r+") as f:
+        del f["tdis"][name]
+        f["tdis"].create_dataset(name, data=np.zeros(100, dtype=dtype))
+
+
+def test_short_flags_dataset_is_refused(tmp_path):
+    path = tmp_path / "m.h5"
+    write_mojito_file(path)
+    _shorten_dataset(path, "tdi_flags", np.int8)
+    with pytest.raises(ValueError, match=r"tdis/tdi_flags has shape \(100,\)"):
+        load_mojito_l1(path, orbit=False)
+
+
+def test_short_channel_dataset_is_refused(tmp_path):
+    path = tmp_path / "m.h5"
+    write_mojito_file(path)
+    _shorten_dataset(path, "A2", np.float64)
+    with pytest.raises(ValueError, match=r"tdis/A2 has shape \(100,\)"):
+        load_mojito_l1(path, orbit=False)
+
+
+def test_nonpositive_laser_frequency_is_refused(tmp_path):
+    path = tmp_path / "m.h5"
+    write_mojito_file(path, laser_frequency=0.0)
+    with pytest.raises(ValueError, match="laser_frequency must be a positive finite"):
+        load_mojito_l1(path, orbit=False)
+
+
 def test_flagged_samples_are_refused(tmp_path):
     path = tmp_path / "flagged.h5"
     write_mojito_file(path, flag_index=2000)

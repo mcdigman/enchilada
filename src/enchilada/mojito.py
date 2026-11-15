@@ -22,11 +22,15 @@ from __future__ import annotations
 
 import math
 import os
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from enchilada.data import L1Data
 from enchilada.orbits import NumericOrbit
+
+if TYPE_CHECKING:
+    import h5py
 
 TDI_CHANNELS = ("A", "E", "T", "X", "Y", "Z")
 """Channel names the loader accepts; dataset ``tdis/<name>2`` holds each."""
@@ -62,6 +66,21 @@ def _resolve_window(
     return first, count
 
 
+def _check_length(file: h5py.File, dataset: str, size: int) -> None:
+    """Refuse a dataset whose length disagrees with the ``size`` attribute.
+
+    h5py clips a slice that runs past a dataset's end, so an unchecked short
+    dataset would return fewer samples than asked for, or leave samples of the
+    window unflagged. Reads only the shape metadata, no data.
+    """
+    shape = file[dataset].shape
+    if shape != (size,):
+        raise ValueError(
+            f"{dataset} has shape {shape} but tdis/sampling says size = {size}; "
+            f"the file is inconsistent"
+        )
+
+
 def load_mojito_l1(
     path: str | os.PathLike[str],
     *,
@@ -91,8 +110,11 @@ def load_mojito_l1(
 
     Raises:
         ValueError: unknown or missing channel, a window outside the file,
-            ``dt`` and ``fs`` attributes that disagree, or any nonzero
-            ``tdi_flags`` value in the window (enchilada has no gap mask).
+            ``dt`` and ``fs`` attributes that disagree, a ``tdi_flags`` or
+            channel dataset whose length differs from the ``size`` attribute,
+            a ``laser_frequency`` that is not positive and finite, or any
+            nonzero ``tdi_flags`` value in the window (enchilada has no gap
+            mask).
     """
     import h5py  # lazy: optional dependency
 
@@ -117,7 +139,13 @@ def load_mojito_l1(
             )
         first, count = _resolve_window(t0, dt, size, start_offset_s, duration_s)
         laser_frequency_hz = float(file.attrs["laser_frequency"])
+        if not (math.isfinite(laser_frequency_hz) and laser_frequency_hz > 0.0):
+            raise ValueError(
+                "root attribute laser_frequency must be a positive finite "
+                f"frequency in Hz, got {laser_frequency_hz}"
+            )
         window = slice(first, first + count)
+        _check_length(file, "tdis/tdi_flags", size)
         flagged = np.flatnonzero(np.asarray(file["tdis/tdi_flags"][window]))
         if flagged.size:
             raise ValueError(
@@ -133,6 +161,7 @@ def load_mojito_l1(
                     f"{file_path} has no dataset {dataset}; the tdis group holds "
                     f"{sorted(file['tdis'])}"
                 )
+            _check_length(file, dataset, size)
             values = np.asarray(file[dataset][window], dtype=np.float64)
             values /= laser_frequency_hz  # Hz -> fractional frequency
             channel_data[name] = values

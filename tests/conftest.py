@@ -107,13 +107,16 @@ def mojito_orbit_positions_equatorial(times):
     return positions
 
 
-def write_mojito_file(path, *, n=4096, flag_index=None, drop=(), fs=None):
+def write_mojito_file(
+    path, *, n=4096, flag_index=None, drop=(), fs=None, size=None, laser_frequency=None
+):
     """Write a tiny file in the Mojito L1 layout and return (xyz, aet) in Hz.
 
     ``xyz`` and ``aet`` are (3, n) arrays in dataset order X, Y, Z and A, E, T;
     A/E/T are the orthonormal combination of X/Y/Z, as in the real product.
     ``flag_index`` sets one tdi_flags entry to 1; ``drop`` removes datasets
-    (e.g. ``("T2",)``); ``fs`` overrides the sampling-rate attribute.
+    (e.g. ``("T2",)``); ``fs``, ``size`` and ``laser_frequency`` override the
+    corresponding attributes (the datasets keep ``n`` samples).
     """
     import h5py
 
@@ -121,7 +124,9 @@ def write_mojito_file(path, *, n=4096, flag_index=None, drop=(), fs=None):
     xyz = 6e-4 * rng.standard_normal((3, n))
     aet = _AET_FROM_XYZ @ xyz
     with h5py.File(path, "w") as f:
-        f.attrs["laser_frequency"] = MOJITO_LASER_FREQUENCY_HZ
+        f.attrs["laser_frequency"] = (
+            MOJITO_LASER_FREQUENCY_HZ if laser_frequency is None else laser_frequency
+        )
         f.attrs["lolipops_version"] = "0.4.5"
         f.attrs["pipeline_name"] = "mojito-signal"
         tdis = f.create_group("tdis")
@@ -129,7 +134,7 @@ def write_mojito_file(path, *, n=4096, flag_index=None, drop=(), fs=None):
         sampling.attrs["t0"] = MOJITO_T0
         sampling.attrs["dt"] = MOJITO_DT
         sampling.attrs["fs"] = 1.0 / MOJITO_DT if fs is None else fs
-        sampling.attrs["size"] = n
+        sampling.attrs["size"] = n if size is None else size
         sampling.attrs["duration"] = n * MOJITO_DT
         for name, row in zip("XYZ", xyz, strict=True):
             tdis.create_dataset(f"{name}2", data=row)
