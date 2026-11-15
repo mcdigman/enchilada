@@ -406,7 +406,7 @@ class L1Data:
 
     @property
     def t0(self) -> float:
-        """LISA shorthand for `start_time_gps` (GPS seconds)."""
+        """LISA shorthand for `start_time_gps` (seconds on the data's clock)."""
         return self.start_time_gps
 
     # ---- domain transforms (fixing the campaign's FFT convention) ------
