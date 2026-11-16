@@ -39,7 +39,7 @@
 - Running notebooks or anything that imports matplotlib needs `MPLBACKEND=Agg MPLCONFIGDIR=$TMPDIR/mpl` (the default cache dir is not writable in the sandbox).
 - The two opt-in real-file tests read `ENCHILADA_MOJITO_L1`; without it they skip.
 
-**Grep inventory, every hit assigned to one task** (run `grep -rn -i "active_mask\|requires_wdm\|importorskip(\"wdm\|importorskip(\"scipy\|>=3\.13\|≥3\.13\|--python 3\.13\|3\.13 or newer\|wdm backend\|local backend\|separately installed\|NumPy-only\|requires only NumPy\|depends only on NumPy\|scipy lazily\|from scipy.*lazy" src tests examples benchmarks README.md` to re-check at the end):
+**Grep inventory, every hit assigned to one task** (run `grep -rn -i "active_mask\|requires_wdm\|importorskip(\"wdm\|importorskip(\"scipy\|>=3\.13\|≥3\.13\|--python 3\.13\|3\.13 or newer\|wdm backend\|local backend\|optional backend\|external backend\|separately installed\|NumPy-only\|requires only NumPy\|depends only on NumPy\|scipy lazily\|from scipy.*lazy" src tests examples benchmarks README.md` to re-check at the end):
 
 | Site | Task |
 |---|---|
@@ -640,7 +640,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Modify: `tests/test_wheel_translation.py:7,17-19,90,93,126,223-227,309-313`
 - Modify: `tests/test_initial_block_state.py:3,24-26,121-122,237-251`
 - Modify: `tests/test_translation_review.py:3,91-103`
-- Modify: `tests/test_toy_translation.py:25-26`, `tests/test_gb_example_contract.py:133-134`, `tests/test_translation_example.py:11,26-29,40`
+- Modify: `tests/test_toy_translation.py:25-26`, `tests/test_gb_example_contract.py:133-134`, `tests/test_translation_example.py:1,11,26-29,40`
 - Modify: `examples/domain_translation.py:1-10` (docstring)
 - Modify: `examples/domain_translation.ipynb` cells `translation-01`, `-02`, `-05`, `-06`, `-07`, `-08`, `-11` (by id, with the script below)
 
@@ -775,6 +775,24 @@ def test_wdm_conversions_reach_domania_only_after_the_grid_checks(monkeypatch):
     ]
 ```
 
+Also add, directly after `test_conversion_checks_nonfinite_data_and_irrelevant_grid_options`, a test proving the post-transform finiteness guard is reachable (the overflow raises NumPy RuntimeWarnings, which `np.errstate` silences so the test also passes under `-W error`):
+
+```python
+def test_transform_refuses_non_finite_output():
+    # Finite input passes the input check; dt * rfft overflows to inf.
+    data = observations(sample_interval_s=1e3)
+    assert data.sample_rate_hz == 1e-3
+    data = replace(
+        data,
+        channel_data={name: np.full(64, 1e308) for name in data.channel_names},
+    )
+    with (
+        np.errstate(over="ignore", invalid="ignore"),
+        pytest.raises(ValueError, match="non-finite coefficients"),
+    ):
+        transform(data, "frequency")
+```
+
 Replace the white-noise test (from `@requires_wdm` at line 292 to the end of the file) with:
 
 ```python
@@ -887,14 +905,16 @@ def transform_channels(
             raise ValueError(f"channel_data[{name!r}] must contain finite values")
     if source_domain == target_domain and source_wdm_grid == target_wdm_grid:
         return {name: values.copy() for name, values in channel_data.items()}
+    if source_domain == "wdm" and source_wdm_grid is None:
+        raise ValueError("WDM source requires wdm_grid")
+    if target_domain == "wdm" and target_wdm_grid is None:
+        raise ValueError("WDM target requires wdm_grid")
     sample_interval_s = 1.0 / sample_rate_hz
     channel_names = tuple(channel_data)
     stacked = np.stack([channel_data[name] for name in channel_names])
     if "wdm" in (source_domain, target_domain):
-        if source_domain == "wdm" and source_wdm_grid is None:
-            raise ValueError("WDM source requires wdm_grid")
-        if target_domain == "wdm" and target_wdm_grid is None:
-            raise ValueError("WDM target requires wdm_grid")
+        # domania widens narrow dtypes itself; the cast keeps the dtype handed
+        # to the seam explicit (complex128 from frequency, float64 otherwise).
         if source_domain == "frequency":
             stacked = stacked.astype(
                 np.result_type(stacked.dtype, np.complex128), copy=False
@@ -1005,7 +1025,7 @@ def test_failed_seed_translation_does_not_register_block(observed, monkeypatch):
 
 `tests/test_gb_example_contract.py`: delete lines 133-134 (`if storage_domain == "wdm":` and the `importorskip`).
 
-`tests/test_translation_example.py`: delete line 11 (`pytest.importorskip("wdm", ...)`) and the blank line after it; lines 26-29 become
+`tests/test_translation_example.py`: line 1 becomes `"""The translation walkthrough preserves data and states across domains."""` (the walkthrough is no longer optional); delete line 11 (`pytest.importorskip("wdm", ...)`) and the blank line after it; lines 26-29 become
 
 ```python
     assert report["wdm_shapes"] == {
@@ -1648,7 +1668,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 **Files:**
 - Modify: `README.md:44-58,292-293,335-339,428-434,579-580,624-625,692-700`, plus a new subsection after line 661 (the end of the "Conventions the loader fixes" list)
 - Modify: `CHANGELOG.md:11-14,23-24,26-33,65-66` (0.4.0 section)
-- Modify: `tests/test_wheel_translation.py:31`, `examples/create_block.ipynb` cell `create-block-21`, `examples/demo.ipynb:286` (stray mentions of the old backend)
+- Modify: `tests/test_wheel_translation.py:31`, `examples/create_block.ipynb` cells `create-block-19` and `create-block-21`, `examples/demo.ipynb:21,286` (stray mentions of the old backend)
 
 Line numbers are from the tree before Task 3: Task 3's README edit (lines 436-449 become 8 lines) shifts every later README line by −6, and this task's own CHANGELOG insertion shifts the lines below it by +3. Every step quotes its anchor text; find by text, not by number.
 
@@ -1659,7 +1679,7 @@ Line numbers are from the tree before Task 3: Task 3's README edit (lines 436-44
 - [ ] README's Mojito section has a "Fitting a window to a WDM grid" subsection with the `factor * Nf * Nt * dt` rule, the 824-sample / 34-minute remainder for Nf = 512 at 0.4 Hz on the full Mojito Light record, and a link to `examples/mojito_wdm_wheel.py`.
 - [ ] CHANGELOG 0.4.0 has the Breaking entry for the core dependencies and the folded layout, an Added entry for `examples/mojito_wdm_wheel.py`, the `Grid` entry without `active_mask`, and the `mojito` extra described as h5py only.
 - [ ] `tests/test_docs.py`, `tests/test_packaging_docs.py` pass.
-- [ ] No file under `src`, `tests`, `examples`, `benchmarks`, `.github` or the README mentions the "WDM backend", a "local backend", "3.13 or newer" or a "separately installed" package; the CHANGELOG mentions them only in the historical 0.3.0 entry.
+- [ ] No file under `src`, `tests`, `examples`, `benchmarks`, `.github` or the README mentions the "WDM backend", a "local backend", an "optional backend", an "external backend", "3.13 or newer" or a "separately installed" package; the CHANGELOG mentions them only in the historical 0.3.0 entry.
 
 **Verify:** `.venv/bin/python -m pytest -q tests/test_docs.py tests/test_packaging_docs.py` → pass; `MPLBACKEND=Agg MPLCONFIGDIR=$TMPDIR/mpl .venv/bin/python -m pytest -q --cov=enchilada` → all pass, coverage ≥ 95 %; `.venv/bin/python -m ruff check src tests examples benchmarks && .venv/bin/python -m ruff format --check src tests examples benchmarks && .venv/bin/python -m mypy` → clean.
 
@@ -1839,6 +1859,10 @@ with
 
 `examples/demo.ipynb:286`: delete the sentence ` Its setup installs the optional local WDM backend.` (with its leading space) from the bullet that starts `- **Time, frequency, and WDM**`; the bullet then ends `...lets Wheel prepare each block's chosen representation.\n",`.
 
+`examples/demo.ipynb:21` (the setup paragraph): delete the two sentences ` If you also use an optional external backend such as WDM, install it after `uv sync`; launching with `--no-sync` preserves those installed packages.` (with the leading space), so the paragraph ends `...supplies the dependencies for the ephemeris section."`.
+
+`examples/create_block.ipynb` cell `create-block-19` (lines 702-703): replace `this tutorial keeps its campaigns in the time domain. The following cell needs no\n",` + `"optional backend: it builds the same white noise on the Fourier grid from the\n",` with `this tutorial keeps its campaigns in the time domain. The following cell builds\n",` + `"the same white noise on the Fourier grid from the\n",` (the rest of the paragraph is unchanged).
+
 Run: `.venv/bin/python - <<'EOF'
 import json
 for name in ("examples/create_block.ipynb", "examples/demo.ipynb"):
@@ -1847,7 +1871,7 @@ print("ok")
 EOF`
 Expected: `ok`.
 
-Run: `grep -rn -i "wdm backend\|local backend\|3\.13 or newer\|separately installed" src tests examples benchmarks README.md CHANGELOG.md .github pyproject.toml`
+Run: `grep -rn -i "wdm backend\|local backend\|optional backend\|external backend\|optional translation\|3\.13 or newer\|separately installed" src tests examples benchmarks README.md CHANGELOG.md .github pyproject.toml`
 Expected: only `CHANGELOG.md` lines below `## [0.3.0]` (the historical entry).
 
 - [ ] **Step 9: Run the gates**
@@ -1861,7 +1885,7 @@ Expected: all pass; `TOTAL` coverage ≥ 95 %.
 Run: `.venv/bin/python -m ruff check src tests examples benchmarks && .venv/bin/python -m ruff format --check src tests examples benchmarks && .venv/bin/python -m mypy`
 Expected: clean.
 
-Run: `grep -rn -i "active_mask\|requires_wdm\|importorskip(\"wdm\|importorskip(\"scipy\|>=3\.13\|≥3\.13\|--python 3\.13\|3\.13 or newer\|wdm backend\|local backend\|separately installed\|NumPy-only\|requires only NumPy\|depends only on NumPy\|scipy lazily\|from scipy.*lazy" src tests examples benchmarks README.md`
+Run: `grep -rn -i "active_mask\|requires_wdm\|importorskip(\"wdm\|importorskip(\"scipy\|>=3\.13\|≥3\.13\|--python 3\.13\|3\.13 or newer\|wdm backend\|local backend\|optional backend\|external backend\|separately installed\|NumPy-only\|requires only NumPy\|depends only on NumPy\|scipy lazily\|from scipy.*lazy" src tests examples benchmarks README.md`
 Expected: no output.
 
 - [ ] **Step 10: Commit**
