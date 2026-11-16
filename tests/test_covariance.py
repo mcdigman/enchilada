@@ -31,7 +31,7 @@ def frequency_data(num_time_samples=8, channel_names=("A", "E")):
 
 
 def wdm_data(channel_names=("A", "E")):
-    # Built by hand: the layout needs no WDM backend.
+    # Built by hand on the folded (Nf, Nt) layout; no transform needed.
     grid = WDMGrid(num_frequency_divisions=4, num_time_divisions=4)
     return L1Data(
         {ch: np.zeros(grid.array_shape) for ch in channel_names},
@@ -126,7 +126,7 @@ class TestConstruction:
     @pytest.mark.parametrize("data", [time_data(), wdm_data()])
     def test_time_and_wdm_blocks_must_be_real(self, data):
         blocks = np.zeros((2, 2, *data.grid.channel_shape), dtype=complex)
-        blocks[0, 0] = blocks[1, 1] = np.where(data.grid.active_mask, 1.0, 0.0)
+        blocks[0, 0] = blocks[1, 1] = 1.0
         with pytest.raises(
             ValueError, match=f"real for data_domain={data.data_domain!r}"
         ):
@@ -169,28 +169,21 @@ class TestConstruction:
         with pytest.raises(ValueError, match="variance must be positive"):
             Covariance(blocks, channel_names=("A", "E"), grid=Grid("time", 8, 2.0))
 
-    def test_inactive_wdm_pixels_must_be_entirely_zero(self):
+    def test_wdm_variances_are_required_at_every_cell(self):
         data = wdm_data()
-        active = data.grid.active_mask
-        blocks = np.zeros((2, 2, *active.shape))
-        blocks[0, 0] = blocks[1, 1] = np.where(active, 1.0, 0.0)
+        blocks = stacked(data.grid.channel_shape, (1.0, 2.0))
         cov = Covariance(blocks, channel_names=data.channel_names, grid=data.grid)
-        np.testing.assert_array_equal(cov.A[~active], 0.0)
-        leaking_variance = blocks.copy()
-        leaking_variance[0, 0][~active] = 1.0
-        with pytest.raises(ValueError, match="inactive WDM pixels"):
-            Covariance(
-                leaking_variance, channel_names=data.channel_names, grid=data.grid
-            )
-        leaking_cross = blocks.copy()
-        leaking_cross[0, 1][~active] = leaking_cross[1, 0][~active] = 0.1
-        with pytest.raises(ValueError, match="inactive WDM pixels"):
-            Covariance(leaking_cross, channel_names=data.channel_names, grid=data.grid)
+        np.testing.assert_array_equal(cov.A, 1.0)
+        blocks[0, 0, 0, 1] = 0.0  # row 0, odd slot: a Nyquist cell, not padding
+        with pytest.raises(
+            ValueError, match="variance must be positive at every point"
+        ):
+            Covariance(blocks, channel_names=data.channel_names, grid=data.grid)
 
     def test_channel_matrices_must_be_positive_definite(self):
         blocks = stacked((8,), (1.0, 1.0), 0.5)
         blocks[0, 1, 4] = blocks[1, 0, 4] = 1.5
-        with pytest.raises(ValueError, match="positive definite at every active point"):
+        with pytest.raises(ValueError, match="positive definite at every point"):
             Covariance(blocks, channel_names=("A", "E"), grid=Grid("time", 8, 2.0))
 
     def test_equality_is_identity(self):
@@ -285,11 +278,11 @@ class TestLike:
                 data, {"A": np.ones(8), "E": np.ones(8), "AE": np.full(8, 2.0)}
             )
 
-    def test_wdm_structural_zeros(self):
+    def test_wdm_variance_at_every_cell(self):
         data = wdm_data()
-        variances = np.where(data.grid.active_mask, 3.0, 0.0)
+        variances = np.full(data.grid.channel_shape, 3.0)
         cov = Covariance.like(data, {"A": variances, "E": variances})
-        np.testing.assert_array_equal(cov.A, variances)
+        np.testing.assert_array_equal(cov.A, 3.0)
         assert cov.grid.data_domain == "wdm"
 
 
@@ -431,18 +424,25 @@ class TestInBasis:
         )
         assert np.all(aet.A.imag == 0)
 
-    def test_wdm_derivation_keeps_structural_zeros(self):
-        data = wdm_data(channel_names=XYZ)
-        active = data.grid.active_mask
-        aet = Covariance.like(
-            data,
+    def test_wdm_derivation_matches_the_time_domain_derivation_cell_by_cell(self):
+        levels = dict(zip(XYZ, (1.0, 2.0, 3.0), strict=True))
+        wdm = wdm_data(channel_names=XYZ)
+        aet_wdm = Covariance.like(
+            wdm,
             {
-                name: np.where(active, level, 0.0)
-                for name, level in zip(XYZ, (1.0, 2.0, 3.0), strict=True)
+                name: np.full(wdm.grid.channel_shape, level)
+                for name, level in levels.items()
             },
         ).in_basis("AET")
-        np.testing.assert_array_equal(aet.blocks[:, :, ~active], 0.0)
-        assert aet.grid == data.grid
+        time = time_data(16, channel_names=XYZ)
+        aet_time = Covariance.like(
+            time, {name: np.full(16, level) for name, level in levels.items()}
+        ).in_basis("AET")
+        assert aet_wdm.grid == wdm.grid
+        expected = aet_time.blocks[:, :, 0][:, :, None, None]
+        np.testing.assert_allclose(
+            aet_wdm.blocks, np.broadcast_to(expected, aet_wdm.blocks.shape)
+        )
 
 
 class TestCopies:

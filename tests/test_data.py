@@ -124,10 +124,19 @@ class TestWDMData:
         with pytest.raises((TypeError, ValueError), match="wdm_grid"):
             replace(observed, wdm_grid=grid)
 
-    @pytest.mark.parametrize("shape", [(4, 16), (5, 7), (1, 16)])
-    def test_inferred_grid_requires_positive_even_divisions(self, observed, shape):
+    @pytest.mark.parametrize(
+        ("shape", "match"),
+        [
+            ((5, 8), "positive even integer"),
+            ((4, 7), "positive even integer"),
+            ((2, 16), "WDM grid division product"),  # well formed, 32 != 64 samples
+        ],
+    )
+    def test_inferred_grid_must_be_even_and_match_the_record(
+        self, observed, shape, match
+    ):
         channels = {name: np.zeros(shape) for name in observed.channel_names}
-        with pytest.raises(ValueError, match="positive even integer"):
+        with pytest.raises(ValueError, match=match):
             replace(observed, data_domain="wdm", channel_data=channels)
 
     @pytest.mark.parametrize("value_kind", ["data", "block_state"])
@@ -137,15 +146,15 @@ class TestWDMData:
         data = replace(
             observed,
             data_domain="wdm",
-            channel_data={name: np.zeros((5, 16)) for name in observed.channel_names},
+            channel_data={name: np.zeros((4, 16)) for name in observed.channel_names},
         )
         for name in data.channel_names:
-            data.channel_data[name] = np.zeros((9, 8))
+            data.channel_data[name] = np.zeros((8, 8))
         value = data if value_kind == "data" else BlockState(template=data.channel_data)
         with pytest.raises(ValueError, match="WDM shape"):
             transform(value, "wdm", reference_data=data)
 
-    @pytest.mark.parametrize("invalid", ["shape", "complex", "integer", "inactive"])
+    @pytest.mark.parametrize("invalid", ["shape", "complex", "integer"])
     def test_wdm_validates_each_channel(self, observed, invalid):
         from enchilada.domains import WDMGrid
 
@@ -153,17 +162,39 @@ class TestWDMData:
         channels = {ch: np.zeros(grid.array_shape) for ch in observed.channel_names}
         error = ValueError
         if invalid == "shape":
-            channels["E"] = np.zeros((5, 8))
+            channels["E"] = np.zeros((8, 8))
         elif invalid == "complex":
             channels["E"] = channels["E"].astype(complex)
             error = TypeError
-        elif invalid == "integer":
+        else:
             channels["E"] = channels["E"].astype(int)
             error = TypeError
-        else:
-            channels["E"][0, 1] = 1.0
         with pytest.raises(error, match="E"):
             replace(observed, data_domain="wdm", channel_data=channels)
+
+    def test_transposed_coefficients_pass_as_a_swapped_grid_until_checked_on_one(
+        self, observed
+    ):
+        """Both axes are even, so L1Data cannot tell (16, 4) from (4, 16); a
+        template checked against a known grid still fails on shape."""
+        from enchilada.domains import WDMGrid
+
+        swapped = replace(
+            observed,
+            data_domain="wdm",
+            channel_data={name: np.zeros((16, 4)) for name in observed.channel_names},
+        )
+        assert swapped.wdm_grid == WDMGrid(
+            num_frequency_divisions=16, num_time_divisions=4
+        )
+        reference = replace(
+            observed,
+            data_domain="wdm",
+            channel_data={name: np.zeros((4, 16)) for name in observed.channel_names},
+        )
+        state = BlockState(template=dict(swapped.channel_data))
+        with pytest.raises(ValueError, match="WDM shape"):
+            transform(state, "wdm", reference_data=reference)
 
 
 class TestPostInitValidation:

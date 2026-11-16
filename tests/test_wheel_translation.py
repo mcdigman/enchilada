@@ -136,8 +136,8 @@ def test_wdm_noise_publication_is_held_on_the_wdm_grid():
     data = observations()
     wdm_data = transform(data, "wdm", num_frequency_divisions=8)
     grid = wdm_data.wdm_grid
-    variances = np.where(grid.active_mask, 1.0, 0.0)
-    variances[1:-1] *= np.arange(1, grid.num_frequency_divisions)[:, None]
+    variances = np.ones(grid.array_shape)
+    variances[1:] *= np.arange(1, grid.num_frequency_divisions)[:, None]
     initial = BlockState(
         covariance=Covariance.like(
             wdm_data, {name: variances for name in data.channel_names}
@@ -228,9 +228,9 @@ def test_initial_wdm_signal_must_match_selected_grid_before_backend(monkeypatch)
     data = observations()
     wheel = Wheel(data)
     # Both grids represent 64 samples, but selected (Nf, Nt) = (4, 16)
-    # requires shape (5, 16), not the (9, 8) coefficients of an (8, 8) grid.
+    # requires shape (4, 16), not the (8, 8) coefficients of an (8, 8) grid.
     initial = BlockState(
-        template={name: np.zeros((9, 8)) for name in data.channel_names}
+        template={name: np.zeros((8, 8)) for name in data.channel_names}
     )
     with pytest.raises(ValueError, match="shape"):
         wheel.add(
@@ -249,7 +249,7 @@ def test_initial_wdm_signal_must_match_selected_grid_before_backend(monkeypatch)
 
 def test_wheel_rejects_mutated_wdm_buffers_with_same_time_sample_count():
     data = L1Data(
-        {name: np.zeros((5, 16)) for name in ("A", "E")},
+        {name: np.zeros((4, 16)) for name in ("A", "E")},
         sample_rate_hz=0.4,
         tdi_generation="2.0",
         physical_observable="fractional_frequency",
@@ -257,7 +257,7 @@ def test_wheel_rejects_mutated_wdm_buffers_with_same_time_sample_count():
     )
     original_grid = data.wdm_grid
     for name in data.channel_names:
-        data.channel_data[name] = np.zeros((9, 8))
+        data.channel_data[name] = np.zeros((8, 8))
     with pytest.raises(ValueError, match="shape"):
         Wheel(data)
     assert data.wdm_grid is original_grid
@@ -456,7 +456,7 @@ def test_noise_only_seed_on_the_block_grid_is_adopted_there(domain):
     """A seed covariance is on the block's grid; the Wheel keeps it there."""
     data = observations()
     reference, options = block_reference(data, domain)
-    variances = np.where(reference.grid.active_mask, 1.0, 0.0)
+    variances = np.ones(reference.grid.channel_shape)
     seed = BlockState(
         covariance=Covariance.like(
             reference, {name: variances for name in data.channel_names}

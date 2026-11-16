@@ -20,7 +20,7 @@ def test_noise_only_wdm_state_translation_carries_its_covariance(observed):
         },
         data_domain="wdm",
     )
-    variances = np.where(grid.active_mask, 1.0, 0.0)
+    variances = np.ones(grid.array_shape)
     covariance = Covariance.like(
         wdm_reference, {name: variances for name in observed.channel_names}
     )

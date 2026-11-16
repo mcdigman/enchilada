@@ -102,7 +102,6 @@ def transform_channels(
             target_wdm_grid.num_time_divisions,
             sample_interval_s,
         )
-        converted[:, ~target_wdm_grid.active_mask] = 0.0
     if not np.isfinite(converted).all():
         raise ValueError("domain transformation produced non-finite coefficients")
     return {

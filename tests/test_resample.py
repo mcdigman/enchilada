@@ -88,7 +88,7 @@ def test_refuses_frequency_and_wdm_input():
     with pytest.raises(ValueError, match="time-domain"):
         decimate(data.to_frequency(), 2)
     wdm = L1Data(
-        {"A": np.zeros((5, 8))},
+        {"A": np.zeros((4, 8))},
         sample_rate_hz=FS,
         tdi_generation="2.0",
         physical_observable="fractional_frequency",

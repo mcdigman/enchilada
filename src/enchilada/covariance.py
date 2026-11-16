@@ -105,9 +105,9 @@ class Covariance:
 
     Construction validates channel names, the grid, dtype, shape, finiteness,
     exact Hermitian symmetry, realness where the domain requires it, positive
-    variances at every active point, zero blocks at inactive WDM pixels and
-    positive definiteness at every active point. The array is stored as a
-    fresh read-only copy. Equality is identity; compare arrays explicitly.
+    variances at every point and positive definiteness at every point. The
+    array is stored as a fresh read-only copy. Equality is identity; compare
+    arrays explicitly.
     """
 
     blocks: np.ndarray
@@ -163,19 +163,14 @@ class Covariance:
                     "(DC and even-length Nyquist)"
                 )
         variances = np.real(np.diagonal(blocks, axis1=0, axis2=1))  # (*S, K)
-        active = grid.active_mask
-        if np.any(variances[active] <= 0):
-            raise ValueError(
-                "every channel's variance must be positive at every active point"
-            )
-        if np.any(blocks[:, :, ~active] != 0):
-            raise ValueError("blocks must be zero at structurally inactive WDM pixels")
-        matrices = np.moveaxis(blocks[:, :, active], (0, 1), (-2, -1))  # (P, K, K)
+        if np.any(variances <= 0):
+            raise ValueError("every channel's variance must be positive at every point")
+        matrices = np.moveaxis(blocks, (0, 1), (-2, -1))  # (*S, K, K)
         try:
             np.linalg.cholesky(matrices)
         except np.linalg.LinAlgError as exc:
             raise ValueError(
-                "covariance must be positive definite at every active point"
+                "covariance must be positive definite at every point"
             ) from exc
         blocks.setflags(write=False)
         return blocks

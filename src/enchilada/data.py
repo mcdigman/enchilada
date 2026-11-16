@@ -26,8 +26,13 @@ class L1Data:
             Frequency arrays contain `num_time_samples // 2 + 1` complex values
             with normalization ``dt * rfft(x)``; DC and even-length Nyquist are
             real. WDM arrays contain real coefficients shaped
-            ``(num_frequency_divisions + 1, num_time_divisions)``; inactive
-            edge coefficients must be exactly zero.
+            ``(num_frequency_divisions, num_time_divisions)`` in domania's
+            folded layout: slot ``(i, j)`` with ``i >= 1`` is band ``i`` at time
+            ``j``; row 0 holds band 0 (DC) at time ``j`` in its even slots and
+            the Nyquist band at time ``j - 1`` in its odd slots. Both axes are
+            even, so a transposed coefficient array is accepted as a grid with
+            swapped divisions; a template checked against a known grid
+            (`check_on_grid`) still fails on shape.
         sample_rate_hz: Samples per second, in Hz.
         num_time_samples: Underlying time sample count per channel in every
             domain. When omitted, derived from time or WDM array shapes.
@@ -208,7 +213,7 @@ class L1Data:
         grid = None
         if self.data_domain == "wdm":
             grid = WDMGrid(
-                num_frequency_divisions=first.shape[0] - 1,
+                num_frequency_divisions=first.shape[0],
                 num_time_divisions=first.shape[1],
             )
         object.__setattr__(self, "wdm_grid", grid)

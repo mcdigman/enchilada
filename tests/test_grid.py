@@ -19,7 +19,6 @@ class TestMembers:
     def test_time_grid(self):
         grid = Grid("time", 64, 0.5)
         assert grid.channel_shape == (64,)
-        assert grid.active_mask.shape == (64,) and grid.active_mask.all()
         assert grid.observation_duration_s == 128.0
         assert grid.wdm_grid is None
 
@@ -27,14 +26,12 @@ class TestMembers:
     def test_frequency_grid(self, n, bins):
         grid = Grid("frequency", n, 1.0)
         assert grid.channel_shape == (bins,)
-        assert grid.active_mask.shape == (bins,) and grid.active_mask.all()
 
     def test_wdm_grid(self):
         wdm = WDMGrid(num_frequency_divisions=8, num_time_divisions=8)
         grid = Grid("wdm", 64, 1.0, wdm)
-        assert grid.channel_shape == (9, 8)
-        np.testing.assert_array_equal(grid.active_mask, wdm.active_mask)
-        assert not grid.active_mask[0, 1] and grid.active_mask[1, 1]
+        assert grid.channel_shape == (8, 8)
+        assert grid.wdm_grid is wdm
 
     def test_counts_and_rates_are_normalised(self):
         grid = Grid("time", np.int64(64), np.float32(0.5))
