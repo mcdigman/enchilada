@@ -58,7 +58,8 @@ jobs:
 
   # The core is numpy, scipy and domania. Prove it imports and tests on every
   # supported interpreter, including 3.14 (which the LISA dev stack runs); the
-  # orbit and Mojito tests skip without h5py and lisaorbits.
+  # HDF5-loader, lisaorbits-loader and Mojito tests skip without h5py and
+  # lisaorbits.
   core-only:
     runs-on: ubuntu-latest
     strategy:
@@ -75,7 +76,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install core only (no extras)
         run: uv sync --no-extra numeric-orbits
-      - name: Test (no coverage gate -- orbit and Mojito tests skip without h5py)
+      - name: Test (no coverage gate -- HDF5, lisaorbits and Mojito tests skip)
         run: uv run --no-sync pytest -q
 
   # Install the core at its declared floors without the extras: uv sync would

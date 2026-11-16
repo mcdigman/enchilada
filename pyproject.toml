@@ -33,7 +33,8 @@ keywords = [
 dependencies = [
     # domania (the WDM transform) needs numpy>=2.1 and scipy>=1.14.1; scipy is
     # also imported directly by resample.py and orbits.py. The core-minimum CI
-    # lane pins these three floors.
+    # lane pins these three floors. domania is capped below 4 because
+    # enchilada's WDM arrays are domania 3's folded layout.
     "numpy>=2.1",
     "scipy>=1.14.1",
     "domania>=3.0,<4",
