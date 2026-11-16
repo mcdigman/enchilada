@@ -1939,6 +1939,8 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ## After the last task (controller)
 
+Final whole-branch review follow-ups (one commit): the dead actionlint `-ignore` for the deleted `wdm.yml` reusable-workflow calls is removed from `.pre-commit-config.yaml`; the `test` lane asserts `import matplotlib` (the notebook tests depend on lisaorbits bringing it); the `core-only` comment and step name also list the translation-notebook skip; the README install paragraph says `from_hdf5` needs h5py from either extra and `from_lisaorbits` needs `numeric-orbits`.
+
 1. Real-file checks, with the Mojito Light file: `ENCHILADA_MOJITO_L1=<file> MPLBACKEND=Agg .venv/bin/python -m pytest -q tests/test_mojito.py tests/test_examples.py -k real_file` → 2 passed; note the wall time of the example test for the PR body.
 2. `~/.local/bin/uv lock --check` (sandbox disabled) → up to date.
 3. Push `domania-wdm` and open the PR against `mojito-loader` with `gh pr create --repo nsgs-analysis-center/enchilada` (sandbox disabled), body ending `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
