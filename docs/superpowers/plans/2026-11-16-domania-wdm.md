@@ -1618,8 +1618,9 @@ def main(
     )
     native = load_mojito_l1(path, duration_s=native_duration_s)
     # decimate leaves edge_samples(factor) = 40 filter-transient samples at each end
-    # (enchilada.resample); with an exactly fitted window and Nf >= 40, as at the
-    # defaults, they fall inside the first and last WDM columns.
+    # (enchilada.resample). WDM atoms overlap neighbouring columns and the transform
+    # is periodic, so the transient leaks several columns inward at both ends; trim
+    # or down-weight those columns if a campaign is sensitive to them.
     data = decimate(native, factor)  # exactly Nf * Nt samples
     observed = transform(data, "wdm", num_frequency_divisions=num_frequency_divisions)
     grid = observed.wdm_grid
@@ -1718,13 +1719,13 @@ separate `examples/requirements-gb.txt` installation described below.
 `enchilada.orbits.NumericOrbit` interpolates with SciPy, a core dependency; its
 file loaders (`from_hdf5`, `from_lisaorbits`) need the `numeric-orbits` extra,
 and reading Mojito L1 files (`enchilada.mojito`) needs the `mojito` extra.
-Decimating (`enchilada.resample`) needs no extra:
+Decimating (`enchilada.resample`) needs no extra. Install the extras with:
 
 ```sh
 uv sync --extra numeric-orbits   # adds h5py, lisaorbits
 uv sync --extra mojito           # or this: adds h5py only (no lisaorbits)
 
-# For the notebooks, install the orbit and example extras together:
+# For the notebooks (matplotlib arrives with lisaorbits), install both extras:
 uv sync --extra numeric-orbits --extra examples
 uv run --no-sync jupyter lab examples/demo.ipynb
 ```
@@ -1744,8 +1745,8 @@ Lines 335-339: replace `` `(num_frequency_divisions + 1, num_time_divisions)` WD
 ```
 `(num_frequency_divisions, num_time_divisions)` WDM). Construction checks
 finite entries, exact Hermitian symmetry, real values where the domain requires
-them, positive variances at every point and positive definiteness at every
-point; the array is stored read-only.
+them, positive variances and positive definiteness at every point; the array is
+stored read-only.
 ```
 
 - [ ] **Step 3: README translation layout paragraph (lines 428-434)**
@@ -1799,8 +1800,11 @@ minutes). [`examples/mojito_wdm_wheel.py`](examples/mojito_wdm_wheel.py) does
 this arithmetic in `fit_window`, loads a week, decimates by 10, translates the
 record to WDM (`Nf = 512`, `Nt = 472`, `dF = 3.9e-4 Hz`, `dT = 1280 s`) and
 serves a diagnostic block on that grid. The 40 edge-transient samples that
-`decimate` leaves at each end fall inside the first and last WDM columns when
-the window is exactly fitted and `Nf >= 40`, as at the example's defaults.
+`decimate` leaves at each end sit in the outer columns' time span, but WDM atoms
+overlap neighbouring columns and the transform is periodic, so the transient
+leaks several columns inward at both ends; trim or down-weight those columns, or
+treat the edges in the time domain before `transform`, if a campaign is
+sensitive to them.
 
 ```
 
@@ -1846,12 +1850,14 @@ At the top of `### Changed` (before the `Covariance` bullet) add:
   `domania>=3.0,<4`; every WDM conversion goes through domania. The WDM
   coefficient layout is domania's folded `(num_frequency_divisions,
   num_time_divisions)`, in which every cell carries data (row 0 interleaves the
-  DC and Nyquist bands); `WDMGrid.active_mask`, `Grid.active_mask` and the
-  inactive-zero rules on coefficients and covariances are removed. The private
-  `wdm` backend, its Python >=3.13 requirement and the `wdm.yml` workflow are
-  gone. The `numeric-orbits` and `mojito` extras no longer carry scipy, so
-  `decimate` and `NumericOrbit` need no extra; both extras require
-  `h5py>=3.12.1`.
+  DC and Nyquist bands); `WDMGrid.active_mask` and the inactive-zero rules on
+  coefficients and covariances are removed. The private `wdm` backend, its
+  Python >=3.13 requirement and the `wdm.yml` workflow are gone. The
+  `numeric-orbits` and `mojito` extras no longer carry scipy, so `decimate` and
+  `NumericOrbit`'s interpolation need no extra; both extras require
+  `h5py>=3.12.1`. WDM arrays in the old `(Nf + 1, Nt)` layout are refused
+  (`num_frequency_divisions must be a positive even integer, got <Nf + 1>`);
+  regenerate them with `transform` from time or frequency data.
 ```
 
 Lines 65-66 (the migration note): `` `N * dt**2 * sigma**2` per frequency bin or `dt * sigma**2` per WDM cell. ``
@@ -1880,9 +1886,11 @@ with
 
 `examples/demo.ipynb:286`: delete the sentence ` Its setup installs the optional local WDM backend.` (with its leading space) from the bullet that starts `- **Time, frequency, and WDM**`; the bullet then ends `...lets Wheel prepare each block's chosen representation.\n",`.
 
-`examples/demo.ipynb:21` (the setup paragraph): delete the two sentences ` If you also use an optional external backend such as WDM, install it after `uv sync`; launching with `--no-sync` preserves those installed packages.` (with the leading space), so the paragraph ends `...supplies the dependencies for the ephemeris section."`.
+`examples/demo.ipynb:21` (the setup paragraph): replace `` `numeric-orbits` supplies the dependencies for the ephemeris section. `` with `` the `numeric-orbits` extra is only needed to read orbit files (the ephemeris section here uses synthetic arrays). ``; then delete the two sentences ` If you also use an optional external backend such as WDM, install it after `uv sync`; launching with `--no-sync` preserves those installed packages.` (with the leading space), so the paragraph ends `...supplies the dependencies for the ephemeris section."`.
 
 `examples/create_block.ipynb` setup markdown cell (file lines 44-46): replace `"The computations need only enchilada and NumPy on Python 3.12 or newer. Matplotlib\n",` + `"is optional and used for the diagnostic figure. The main tutorial needs no WDM,\n",` + `"Eryn, GBGPU, or orbit package. Installing optional packages after `uv sync`, then\n",` with `"The computations need only enchilada's core dependencies on Python 3.12 or newer.\n",` + `"Matplotlib is optional and used for the diagnostic figure. The main tutorial needs\n",` + `"no Eryn, GBGPU, or orbit package. Installing optional packages after `uv sync`, then\n",`.
+
+`README.md` Known-limitations bullet on noise models for several grids: `follows domainia 3.0.` becomes `follows the domania migration.` (typo fix).
 
 `examples/load_mojito.py:3`: `Needs the `mojito` extra (h5py, scipy) and a Mojito L1 file:` becomes `Needs the `mojito` extra (h5py) and a Mojito L1 file:`.
 
