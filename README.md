@@ -25,7 +25,7 @@ spokes, and the translation ring; everything on the ring is model code.*
 
 ## Install
 
-Requires Python ≥ 3.12 (floor set by lisaorbits).
+Requires Python ≥ 3.12 (floor set by domania and lisaorbits).
 
 ```sh
 pip install enchilada      # or: uv add enchilada
@@ -48,9 +48,10 @@ are confined to the optional galactic-binary example. Installing enchilada or
 any of its extras does not install them; running that example requires the
 separate `examples/requirements-gb.txt` installation described below.
 
-Loading tabulated spacecraft ephemerides (`enchilada.orbits.NumericOrbit`)
-needs the `numeric-orbits` extra; reading Mojito L1 files (`enchilada.mojito`)
-needs the `mojito` extra. Decimating (`enchilada.resample`) needs no extra:
+`enchilada.orbits.NumericOrbit` interpolates with SciPy, a core dependency; its
+file loaders (`from_hdf5`, `from_lisaorbits`) need the `numeric-orbits` extra,
+and reading Mojito L1 files (`enchilada.mojito`) needs the `mojito` extra.
+Decimating (`enchilada.resample`) needs no extra:
 
 ```sh
 uv sync --extra numeric-orbits   # adds h5py, lisaorbits
@@ -678,8 +679,8 @@ after decimation, both counts even, and neither `transform` nor the loader pads
 or trims. Choose `Nf`, take the largest even `Nt` with
 `factor * Nf * Nt * dt <= duration`, and pass `factor * Nf * Nt * dt` as
 `duration_s` to `load_mojito_l1`. The full Mojito Light record (252,465,200
-samples) does not factor onto any power-of-two `Nf`, so a campaign drops a few
-hundred to a few thousand samples (`Nf = 512` at 0.4 Hz: 824 samples, 34
+samples; 25,246,520 after decimating by 10) is rarely an exact multiple of
+`Nf * Nt` with even `Nt`; at `Nf = 512` and 0.4 Hz it drops 824 samples (34
 minutes). [`examples/mojito_wdm_wheel.py`](examples/mojito_wdm_wheel.py) does
 this arithmetic in `fit_window`, loads a week, decimates by 10, translates the
 record to WDM (`Nf = 512`, `Nt = 472`, `dF = 3.9e-4 Hz`, `dT = 1280 s`) and
