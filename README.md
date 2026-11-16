@@ -41,18 +41,20 @@ uv sync
 
 or with pip: `pip install -e .`
 
-The core package depends only on NumPy (`>=1.26.4`). GBGPU, Eryn, and LISA Analysis Tools
+The core depends on NumPy (`>=2.1`), SciPy (`>=1.14.1`) and
+[domania](https://pypi.org/project/domania/) (`>=3.0,<4`), which performs the
+WDM transforms. GBGPU, Eryn, and LISA Analysis Tools
 are confined to the optional galactic-binary example. Installing enchilada or
 any of its extras does not install them; running that example requires the
 separate `examples/requirements-gb.txt` installation described below.
 
 Loading tabulated spacecraft ephemerides (`enchilada.orbits.NumericOrbit`)
-needs the `numeric-orbits` extra; reading Mojito L1 files and decimating
-(`enchilada.mojito`, `enchilada.resample`) needs the `mojito` extra:
+needs the `numeric-orbits` extra; reading Mojito L1 files (`enchilada.mojito`)
+needs the `mojito` extra. Decimating (`enchilada.resample`) needs no extra:
 
 ```sh
-uv sync --extra numeric-orbits   # adds h5py, scipy, lisaorbits
-uv sync --extra mojito           # or this: adds h5py, scipy (no lisaorbits)
+uv sync --extra numeric-orbits   # adds h5py, lisaorbits
+uv sync --extra mojito           # or this: adds h5py only (no lisaorbits)
 
 # For the notebooks, install the orbit and example extras together:
 uv sync --extra numeric-orbits --extra examples
@@ -289,8 +291,8 @@ that is a noise block's business. The one convention a block needs follows from
 `X = dt * rfft(x)`: stationary noise with one-sided PSD `S` has bin variance
 `C_k = (Tobs / 2) S(f_k)` at every rfft bin, `f = 0` and Nyquist included, with
 `Tobs = N / fs`. White noise of variance `sigma**2` per sample therefore has
-`C_k = N * dt**2 * sigma**2` at every bin and `dt * sigma**2` at every active
-WDM pixel (zero at the structurally inactive edge pixels). A block that
+`C_k = N * dt**2 * sigma**2` at every bin and `dt * sigma**2` at every WDM
+cell. A block that
 evaluates a PSD model at `f = np.fft.rfftfreq(spectrum.N, spectrum.dt)` builds
 its covariance with
 `Covariance.like(spectrum, {ch: spectrum.Tobs / 2 * model.psd(f) for ch in spectrum.channel_names})`
@@ -332,11 +334,10 @@ Internally the object is one array, `noise.blocks`, of shape
 `(K, K) + channel_shape` for `K` channels: `blocks[i, j]` is the covariance
 between channels `i` and `j` at every point and `blocks[j, i]` its conjugate,
 so there is one value per point (`(N,)` time, `(N//2 + 1,)` frequency,
-`(num_frequency_divisions + 1, num_time_divisions)` WDM). Construction checks
+`(num_frequency_divisions, num_time_divisions)` WDM). Construction checks
 finite entries, exact Hermitian symmetry, real values where the domain requires
-them, positive variances at every active point, zero blocks at inactive WDM
-pixels and positive definiteness at every active point; the array is stored
-read-only.
+them, positive variances at every point and positive definiteness at every
+point; the array is stored read-only.
 
 The object carries its grid: `noise.grid` is a `Grid` (domain, sample count,
 sample rate and WDM grid), the same value as `observed.grid`.
@@ -425,12 +426,15 @@ WDM requires both division counts to be positive and even, with
 `num_frequency_divisions * num_time_divisions == num_time_samples`. Supply either
 count on the first conversion and the other is derived; both can be supplied if
 consistent. WDM-to-WDM conversion without new counts reuses the grid.
-Each WDM channel contains a real `float64` array of shape
-`(num_frequency_divisions + 1, num_time_divisions)`, with zero entries outside
-the grid's structural `active_mask`. `L1Data` derives its read-only `wdm_grid`
-metadata from this coefficient layout. It is a frozen `WDMGrid` for WDM data
-and `None` for time or frequency data; copies preserve the grid. Choose division
-counts through `transform` or `Wheel.add(data_domain="wdm", ...)`, rather than
+Each WDM channel is a real `float64` array of shape
+`(num_frequency_divisions, num_time_divisions)` in domania's folded layout, in
+which every cell carries data: row `i >= 1` holds band `i` at each time index,
+and row 0 holds the DC band at even time indices and the Nyquist band, one
+step behind, at odd ones (`domania.wilson.grid.cells(Nf, Nt)` lists each
+slot's band and time). `L1Data` derives its read-only `wdm_grid` metadata from
+this coefficient layout. It is a frozen `WDMGrid` for WDM data and `None` for
+time or frequency data; copies preserve the grid. Choose division counts
+through `transform` or `Wheel.add(data_domain="wdm", ...)`, rather than
 passing `wdm_grid` to `L1Data`.
 
 Time/Fourier transforms are plain NumPy FFTs. WDM conversions go through
@@ -569,8 +573,8 @@ The constellation ephemeris the data was produced with rides on
 `L1Data.orbit_ephemeris` so every block builds its response from the *same*
 spacecraft positions. `enchilada.orbits.NumericOrbit` tabulates and
 cubic-spline-interpolates an ephemeris, with loaders for LDC/Mojito-style
-HDF5 files (`from_hdf5`, which needs h5py and scipy from either the
-`numeric-orbits` or the `mojito` extra) and lisaorbits objects
+HDF5 files (`from_hdf5`, which needs h5py from either the `numeric-orbits` or
+the `mojito` extra) and lisaorbits objects
 (`from_lisaorbits`, which needs `numeric-orbits`).
 
 `Orbit` exposes `nominal_arm_length_m`, `transfer_frequency_hz`, and
@@ -614,7 +618,7 @@ Dataset 1; verified on Mojito Light, and Mojito Heavy shares the layout but
 its flagged gaps must be excluded from the window) into a time-domain
 `L1Data`, and
 `enchilada.resample.decimate` reduces the 4 Hz record to a rate a campaign can
-run at. Both need the `mojito` extra.
+run at. The loader needs the `mojito` extra; `decimate` needs no extra.
 
 ```python
 from enchilada import decimate, load_mojito_l1
@@ -653,6 +657,23 @@ Conventions the loader fixes:
 - **Orbit.** With `orbit=True` (default), `NumericOrbit.from_hdf5` reads the
   file's `orbits` group; its BCRS positions are rotated to the ecliptic frame.
 
+### Fitting a window to a WDM grid
+
+A WDM observation needs `num_frequency_divisions * num_time_divisions` samples
+after decimation, both counts even, and neither `transform` nor the loader pads
+or trims. Choose `Nf`, take the largest even `Nt` with
+`factor * Nf * Nt * dt <= duration`, and pass `factor * Nf * Nt * dt` as
+`duration_s` to `load_mojito_l1`. The full Mojito Light record (252,465,200
+samples) does not factor onto any power-of-two `Nf`, so a campaign drops a few
+hundred to a few thousand samples (`Nf = 512` at 0.4 Hz: 824 samples, 34
+minutes). [`examples/mojito_wdm_wheel.py`](examples/mojito_wdm_wheel.py) does
+this arithmetic in `fit_window`, loads a week, decimates by 10, translates the
+record to WDM (`Nf = 512`, `Nt = 472`, `dF = 3.9e-4 Hz`, `dT = 1280 s`) and
+serves a diagnostic block on that grid. `decimate` leaves `edge_samples(factor)`
+(40 samples; see `enchilada.resample`) of filter transient at each end of the
+record; with an exactly fitted window and `Nf >= 40`, as at the example's
+defaults, they fall inside the first and last WDM columns.
+
 `decimate(data, factor)` applies one fixed anti-alias policy: a Kaiser-window
 FIR low-pass with 120 dB stopband attenuation, passband edge at 0.8 times the
 new Nyquist frequency and stopband edge at the new Nyquist (about
@@ -685,11 +706,11 @@ uv run --no-sync ruff format --check src tests examples benchmarks   # CI gates 
 CI runs lint, formatting, mypy, the suite behind a 95% coverage gate, artifact
 builds, and an installed-wheel smoke test across Python 3.12/3.13 on Linux and
 macOS, with core-only checks through Python 3.14. A separate Python 3.12 job tests
-the core at NumPy 1.26.4 without orbit dependencies; another job resolves the
-numeric-orbit and mojito dependency floors. The optional WDM integration job installs a
-pinned backend revision and runs the numerical and notebook checks. Tag pushes
-matching `v*` run these gates before PyPI Trusted Publishing. Manual release
-dispatches build and validate artifacts without publishing, including on tags. See
+the core at its dependency floors (NumPy 2.1.0, SciPy 1.14.1, domania 3.0.0)
+without h5py or lisaorbits; another job resolves the numeric-orbit and mojito
+dependency floors. Tag pushes matching `v*` run these gates before PyPI Trusted
+Publishing. Manual release dispatches build and validate artifacts without
+publishing, including on tags. See
 [CHANGELOG.md](https://github.com/AaronDJohnson/enchilada/blob/main/CHANGELOG.md) for release notes.
 
 ## Known limitations

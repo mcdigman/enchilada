@@ -28,7 +28,7 @@ def observations():
 def block_reference(data, domain):
     """An L1Data on the block's grid and the matching Wheel.add options.
 
-    Built by hand, so no test here needs the WDM backend to build a covariance.
+    Built by hand, so no test here needs a WDM transform to build a covariance.
     """
     if domain == "frequency":
         return data.to_frequency(), {}
