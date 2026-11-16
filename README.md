@@ -657,23 +657,6 @@ Conventions the loader fixes:
 - **Orbit.** With `orbit=True` (default), `NumericOrbit.from_hdf5` reads the
   file's `orbits` group; its BCRS positions are rotated to the ecliptic frame.
 
-### Fitting a window to a WDM grid
-
-A WDM observation needs `num_frequency_divisions * num_time_divisions` samples
-after decimation, both counts even, and neither `transform` nor the loader pads
-or trims. Choose `Nf`, take the largest even `Nt` with
-`factor * Nf * Nt * dt <= duration`, and pass `factor * Nf * Nt * dt` as
-`duration_s` to `load_mojito_l1`. The full Mojito Light record (252,465,200
-samples) does not factor onto any power-of-two `Nf`, so a campaign drops a few
-hundred to a few thousand samples (`Nf = 512` at 0.4 Hz: 824 samples, 34
-minutes). [`examples/mojito_wdm_wheel.py`](examples/mojito_wdm_wheel.py) does
-this arithmetic in `fit_window`, loads a week, decimates by 10, translates the
-record to WDM (`Nf = 512`, `Nt = 472`, `dF = 3.9e-4 Hz`, `dT = 1280 s`) and
-serves a diagnostic block on that grid. `decimate` leaves `edge_samples(factor)`
-(40 samples; see `enchilada.resample`) of filter transient at each end of the
-record; with an exactly fitted window and `Nf >= 40`, as at the example's
-defaults, they fall inside the first and last WDM columns.
-
 `decimate(data, factor)` applies one fixed anti-alias policy: a Kaiser-window
 FIR low-pass with 120 dB stopband attenuation, passband edge at 0.8 times the
 new Nyquist frequency and stopband edge at the new Nyquist (about
@@ -687,6 +670,22 @@ for sample with them. Decimating 2^24 samples by 10 takes about 2.7 s with a
 55 MB peak allocation, so one full 252-million-sample Mojito channel takes
 about 40 s; the one-day example runs in well under a second. See
 [`examples/load_mojito.py`](examples/load_mojito.py).
+
+### Fitting a window to a WDM grid
+
+A WDM observation needs `num_frequency_divisions * num_time_divisions` samples
+after decimation, both counts even, and neither `transform` nor the loader pads
+or trims. Choose `Nf`, take the largest even `Nt` with
+`factor * Nf * Nt * dt <= duration`, and pass `factor * Nf * Nt * dt` as
+`duration_s` to `load_mojito_l1`. The full Mojito Light record (252,465,200
+samples) does not factor onto any power-of-two `Nf`, so a campaign drops a few
+hundred to a few thousand samples (`Nf = 512` at 0.4 Hz: 824 samples, 34
+minutes). [`examples/mojito_wdm_wheel.py`](examples/mojito_wdm_wheel.py) does
+this arithmetic in `fit_window`, loads a week, decimates by 10, translates the
+record to WDM (`Nf = 512`, `Nt = 472`, `dF = 3.9e-4 Hz`, `dT = 1280 s`) and
+serves a diagnostic block on that grid. The 40 edge-transient samples that
+`decimate` leaves at each end fall inside the first and last WDM columns when
+the window is exactly fitted and `Nf >= 40`, as at the example's defaults.
 
 ## Development
 
