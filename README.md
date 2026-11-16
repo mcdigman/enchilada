@@ -49,9 +49,10 @@ any of its extras does not install them; running that example requires the
 separate `examples/requirements-gb.txt` installation described below.
 
 `enchilada.orbits.NumericOrbit` interpolates with SciPy, a core dependency; its
-file loaders (`from_hdf5`, `from_lisaorbits`) need the `numeric-orbits` extra,
-and reading Mojito L1 files (`enchilada.mojito`) needs the `mojito` extra.
-Decimating (`enchilada.resample`) needs no extra. Install the extras with:
+file loaders need an extra (`from_hdf5` needs h5py from either extra,
+`from_lisaorbits` needs `numeric-orbits`), and reading Mojito L1 files
+(`enchilada.mojito`) needs the `mojito` extra. Decimating (`enchilada.resample`)
+needs no extra. Install the extras with:
 
 ```sh
 uv sync --extra numeric-orbits   # adds h5py, lisaorbits
