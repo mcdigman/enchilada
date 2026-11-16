@@ -51,7 +51,7 @@
 | `tests/test_domains.py`, `tests/test_grid.py:22,30,36-37`, `tests/test_data.py:84-166`, `tests/test_block_state.py:12-52`, `tests/test_covariance.py:33-42,126-131,172-187,193,288-293,434-445`, `tests/test_translation_review.py:23`, `tests/test_wheel_translation.py:139-140,459` | 1 |
 | `src/enchilada/_transforms.py` (`_load_wdm`, Python 3.13 gate), `src/enchilada/translation.py:74,83-87` | 2 |
 | `tests/test_translation.py` (`requires_wdm`, `import wdm`, three backend-error tests, `active_mask` at 186 and 313), `tests/test_wheel_translation.py:7,17-19,90,93,126,223-239,250-262,309-320`, `tests/test_initial_block_state.py:3,24-26,121-122,237-251`, `tests/test_translation_review.py:3,91-103`, `tests/test_toy_translation.py:25-26`, `tests/test_gb_example_contract.py:133-134`, `tests/test_translation_example.py:11,26-29` | 2 |
-| `examples/domain_translation.py:1-10`, `examples/domain_translation.ipynb` cells `translation-01,-05,-06,-07,-08` | 2 |
+| `examples/domain_translation.py:1-10`, `examples/domain_translation.ipynb` cells `translation-01,-02,-05,-06,-07,-08,-11` | 2 |
 | `pyproject.toml`, `src/enchilada/resample.py:10,37,87`, `src/enchilada/orbits.py:13-14,118`, `src/enchilada/mojito.py:18`, `tests/test_orbits.py:6`, `tests/test_resample.py:8-11`, `tests/test_mojito.py:9`, `tests/test_examples.py:56,346`, `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `.github/workflows/wdm.yml` (delete), `README.md:436-449`, `uv.lock` | 3 |
 | `examples/mojito_wdm_wheel.py` (new), `tests/test_examples.py` (new tests) | 4 |
 | `README.md:44-58,292-293,335-339,428-434,579-580,624-625, new paragraph after 661, 692-700`, `CHANGELOG.md` | 5 |
@@ -642,7 +642,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Modify: `tests/test_translation_review.py:3,91-103`
 - Modify: `tests/test_toy_translation.py:25-26`, `tests/test_gb_example_contract.py:133-134`, `tests/test_translation_example.py:11,26-29,40`
 - Modify: `examples/domain_translation.py:1-10` (docstring)
-- Modify: `examples/domain_translation.ipynb` cells `translation-01`, `-05`, `-06`, `-07`, `-08` (by id, with the script below)
+- Modify: `examples/domain_translation.ipynb` cells `translation-01`, `-02`, `-05`, `-06`, `-07`, `-08`, `-11` (by id, with the script below)
 
 **Acceptance Criteria:**
 - [ ] `transform(data, "wdm", num_frequency_divisions=8)` on a 64-sample two-channel record returns `(8, 8)` float64 arrays equal, bit for bit, to `domania.wilson.forward_time(x, 8, 8, dt)` per channel and to `domania.transform(stack, "time", "wdm", N=64, dt=dt, target_wdm=(8, 8))` for the stack (time source); the frequency source agrees to `atol=1e-13`; every route back to time or frequency agrees with the direct transform to `1e-12`.
@@ -1084,9 +1084,31 @@ PLOTS = """The two grids trade time resolution for frequency resolution. The WDM
 coefficient indices, and all representations show channel A. Row 0 interleaves
 the DC band (even columns) with the Nyquist band (odd columns)."""
 
-MARKDOWN = {"translation-01": SETUP, "translation-05": LAYOUT, "translation-07": PLOTS}
+COVARIANCE = """## 4. A covariance stays on its grid
+
+A `Covariance` carries its `grid` and is not translated: `transform` refuses
+one, and a block reads the covariance on the grid it was published on. This
+walkthrough translates data and block states only.
+
+Every cell of the folded WDM layout carries data, so a WDM `Covariance` must
+have a positive variance at every cell (the constructor enforces this)."""
+
+MARKDOWN = {
+    "translation-01": SETUP,
+    "translation-05": LAYOUT,
+    "translation-07": PLOTS,
+    "translation-11": COVARIANCE,
+}
 
 CODE_REPLACEMENTS = {
+    "translation-02": [
+        (
+            "if sys.version_info < (3, 13):\n"
+            '    raise RuntimeError("Choose a Python >=3.13 kernel for the local WDM backend.")\n'
+            "\n",
+            "",
+        ),
+    ],
     "translation-06": [
         (
             'assert wdm_data.channel_data["A"].shape == (9, 16)',
@@ -1130,8 +1152,8 @@ print("edited", list(MARKDOWN) + list(CODE_REPLACEMENTS))
 
 Then confirm nothing else in the notebook mentions the old layout:
 
-Run: `grep -n "active_mask\|wdm checkout\|../wdm\|3.13\|+ 1,\|(9, 16)\|(17, 8)\|Inactive" examples/domain_translation.ipynb`
-Expected: no output.
+Run: `grep -n "active_mask\|wdm checkout\|\.\./wdm\|(3, 13)\|>=3\.13\|Nf + 1\|(9, 16)\|(17, 8)\|Inactive" examples/domain_translation.ipynb`
+Expected: no output (the kernel metadata's `"version": "3.13"` and ordinary `+ 1,` arithmetic in `translation-17` are fine and are not matched).
 
 - [ ] **Step 9: Run the gates**
 
