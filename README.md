@@ -51,13 +51,13 @@ separate `examples/requirements-gb.txt` installation described below.
 `enchilada.orbits.NumericOrbit` interpolates with SciPy, a core dependency; its
 file loaders (`from_hdf5`, `from_lisaorbits`) need the `numeric-orbits` extra,
 and reading Mojito L1 files (`enchilada.mojito`) needs the `mojito` extra.
-Decimating (`enchilada.resample`) needs no extra:
+Decimating (`enchilada.resample`) needs no extra. Install the extras with:
 
 ```sh
 uv sync --extra numeric-orbits   # adds h5py, lisaorbits
 uv sync --extra mojito           # or this: adds h5py only (no lisaorbits)
 
-# For the notebooks, install the orbit and example extras together:
+# For the notebooks (matplotlib arrives with lisaorbits), install both extras:
 uv sync --extra numeric-orbits --extra examples
 uv run --no-sync jupyter lab examples/demo.ipynb
 ```
@@ -337,8 +337,8 @@ between channels `i` and `j` at every point and `blocks[j, i]` its conjugate,
 so there is one value per point (`(N,)` time, `(N//2 + 1,)` frequency,
 `(num_frequency_divisions, num_time_divisions)` WDM). Construction checks
 finite entries, exact Hermitian symmetry, real values where the domain requires
-them, positive variances at every point and positive definiteness at every
-point; the array is stored read-only.
+them, positive variances and positive definiteness at every point; the array is
+stored read-only.
 
 The object carries its grid: `noise.grid` is a `Grid` (domain, sample count,
 sample rate and WDM grid), the same value as `observed.grid`.
@@ -685,8 +685,11 @@ minutes). [`examples/mojito_wdm_wheel.py`](examples/mojito_wdm_wheel.py) does
 this arithmetic in `fit_window`, loads a week, decimates by 10, translates the
 record to WDM (`Nf = 512`, `Nt = 472`, `dF = 3.9e-4 Hz`, `dT = 1280 s`) and
 serves a diagnostic block on that grid. The 40 edge-transient samples that
-`decimate` leaves at each end fall inside the first and last WDM columns when
-the window is exactly fitted and `Nf >= 40`, as at the example's defaults.
+`decimate` leaves at each end sit in the outer columns' time span, but WDM atoms
+overlap neighbouring columns and the transform is periodic, so the transient
+leaks several columns inward at both ends; trim or down-weight those columns, or
+treat the edges in the time domain before `transform`, if a campaign is
+sensitive to them.
 
 ## Development
 
@@ -737,7 +740,7 @@ oversights:
   grid and is not translated, so a campaign that carries covariance keeps every
   block on one grid; a block on another grid is refused at `run`. Delivering a
   noise model to blocks on several grids is the noise-components layer that
-  follows domainia 3.0.
+  follows the domania migration.
 - **No checkpoint file format or lifecycle end.** A restart requires the blocks'
   sampler states, Wheel's accepted physical estimates, and the relevant RNG states
   to be saved and restored consistently. Serialization, restoration, and resource

@@ -32,12 +32,14 @@ All notable changes to enchilada are documented here. The format follows
   `domania>=3.0,<4`; every WDM conversion goes through domania. The WDM
   coefficient layout is domania's folded `(num_frequency_divisions,
   num_time_divisions)`, in which every cell carries data (row 0 interleaves the
-  DC and Nyquist bands); `WDMGrid.active_mask`, `Grid.active_mask` and the
-  inactive-zero rules on coefficients and covariances are removed. The private
-  `wdm` backend, its Python >=3.13 requirement and the `wdm.yml` workflow are
-  gone. The `numeric-orbits` and `mojito` extras no longer carry scipy, so
-  `decimate` and `NumericOrbit` need no extra; both extras require
-  `h5py>=3.12.1`.
+  DC and Nyquist bands); `WDMGrid.active_mask` and the inactive-zero rules on
+  coefficients and covariances are removed. The private `wdm` backend, its
+  Python >=3.13 requirement and the `wdm.yml` workflow are gone. The
+  `numeric-orbits` and `mojito` extras no longer carry scipy, so `decimate` and
+  `NumericOrbit`'s interpolation need no extra; both extras require
+  `h5py>=3.12.1`. WDM arrays in the old `(Nf + 1, Nt)` layout are refused
+  (`num_frequency_divisions must be a positive even integer, got <Nf + 1>`);
+  regenerate them with `transform` from time or frequency data.
 - `Covariance` stores one stacked `(K, K, *channel_shape)` Hermitian array,
   `blocks`, and carries its `grid`. `Covariance.like(data, pairs)` is the one
   classmethod and captures the data's grid and channel order; `pair`, the

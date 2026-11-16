@@ -59,8 +59,9 @@ def main(
     )
     native = load_mojito_l1(path, duration_s=native_duration_s)
     # decimate leaves edge_samples(factor) = 40 filter-transient samples at each end
-    # (enchilada.resample); with an exactly fitted window and Nf >= 40, as at the
-    # defaults, they fall inside the first and last WDM columns.
+    # (enchilada.resample). WDM atoms overlap neighbouring columns and the transform
+    # is periodic, so the transient leaks several columns inward at both ends; trim
+    # or down-weight those columns if a campaign is sensitive to them.
     data = decimate(native, factor)  # exactly Nf * Nt samples
     observed = transform(data, "wdm", num_frequency_divisions=num_frequency_divisions)
     grid = observed.wdm_grid
