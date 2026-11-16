@@ -45,7 +45,10 @@ def fit_window(duration_s, *, dt, factor, num_frequency_divisions):
 def main(
     path, *, num_frequency_divisions=512, factor=10, duration_s=7 * SECONDS_PER_DAY
 ):
-    """Fit a window, load and decimate it, translate to WDM, run one Wheel cycle."""
+    """Fit a window, load and decimate it, translate to WDM, run one Wheel cycle.
+
+    `factor` must be at least 2 (`decimate` refuses 1).
+    """
     # A cheap probe for the file's sampling interval: one minute of one channel.
     probe = load_mojito_l1(path, channels=("A",), duration_s=60.0, orbit=False)
     native_duration_s, num_time_divisions = fit_window(
@@ -55,26 +58,32 @@ def main(
         num_frequency_divisions=num_frequency_divisions,
     )
     native = load_mojito_l1(path, duration_s=native_duration_s)
+    # decimate leaves edge_samples(factor) = 40 filter-transient samples at each end
+    # (enchilada.resample); with an exactly fitted window and Nf >= 40, as at the
+    # defaults, they fall inside the first and last WDM columns.
     data = decimate(native, factor)  # exactly Nf * Nt samples
     observed = transform(data, "wdm", num_frequency_divisions=num_frequency_divisions)
     grid = observed.wdm_grid
     print(
-        f"window: {native_duration_s} s = {factor} x {num_frequency_divisions} x "
-        f"{num_time_divisions} native samples at dt = {probe.dt} s"
+        f"window: {native_duration_s} s (factor {factor} "
+        f"x Nf {num_frequency_divisions} x Nt {num_time_divisions} "
+        f"= {native.num_time_samples} native samples at dt = {probe.dt} s)"
     )
-    frequency_resolution_hz = 1.0 / (2.0 * grid.num_frequency_divisions * data.dt)
-    time_resolution_s = grid.num_frequency_divisions * data.dt
+    band_spacing_hz = 1.0 / (2.0 * grid.num_frequency_divisions * data.dt)
+    column_duration_s = grid.num_frequency_divisions * data.dt
     print(
         f"WDM grid: Nf = {grid.num_frequency_divisions}, "
-        f"Nt = {grid.num_time_divisions}, dF = {frequency_resolution_hz:.3e} Hz, "
-        f"dT = {time_resolution_s} s, shape {grid.array_shape}"
+        f"Nt = {grid.num_time_divisions}, dF = {band_spacing_hz:.3e} Hz, "
+        f"dT = {column_duration_s} s, shape {grid.array_shape}"
     )
     for name in observed.channel_names:
         rms = float(np.sqrt(np.mean(observed.channel_data[name] ** 2)))
         print(f"  {name}: rms {rms:.3e} per WDM coefficient")
     wheel = Wheel(observed, random_seed=0)
     wheel.add(EchoBlock(name="echo"), initial_block_state=BlockState())
-    wheel.run(num_cycles=1)  # the block is served on the WDM grid
+    # EchoBlock adds no signal, so its "[echo] ... residual RMS" line repeats the A
+    # rms above: the block was served the WDM coefficients.
+    wheel.run(num_cycles=1)
     residual = wheel.residual()
     print(f"residual: domain {residual.data_domain} on {residual.wdm_grid}")
     return wheel

@@ -388,6 +388,8 @@ def test_mojito_wdm_wheel_example_builds_a_wdm_wheel(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "window: 992.0 s" in out, out
     assert "WDM grid: Nf = 8, Nt = 124" in out, out
+    # 1/(2*8*1 s) and 8*1 s at the decimated 1 Hz
+    assert "dF = 6.250e-02 Hz, dT = 8.0 s" in out, out
     for name in residual.channel_names:
         assert f"  {name}: rms" in out, out
     assert out.count("per WDM coefficient") == len(residual.channel_names), out
@@ -432,7 +434,7 @@ REAL_MOJITO_FILE = os.environ.get("ENCHILADA_MOJITO_L1")
 )
 def test_mojito_wdm_wheel_example_on_the_real_file(capsys):
     """A week at Nf = 512: 2,416,640 native samples per channel, decimated by 10
-    to 512 x 472 WDM coefficients. Takes tens of seconds."""
+    to 512 x 472 WDM coefficients. Takes about a second on the Mojito Light file."""
     h5py = pytest.importorskip("h5py")
     from enchilada import WDMGrid
 
@@ -445,4 +447,6 @@ def test_mojito_wdm_wheel_example_on_the_real_file(capsys):
         num_frequency_divisions=512, num_time_divisions=472
     )
     assert residual.start_time_gps == t0
-    assert "WDM grid: Nf = 512, Nt = 472" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "WDM grid: Nf = 512, Nt = 472" in out, out
+    assert "dF = 3.906e-04 Hz, dT = 1280.0 s" in out, out
