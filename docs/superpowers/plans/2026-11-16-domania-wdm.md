@@ -39,7 +39,7 @@
 - Running notebooks or anything that imports matplotlib needs `MPLBACKEND=Agg MPLCONFIGDIR=$TMPDIR/mpl` (the default cache dir is not writable in the sandbox).
 - The two opt-in real-file tests read `ENCHILADA_MOJITO_L1`; without it they skip.
 
-**Grep inventory, every hit assigned to one task** (run `grep -rn "active_mask\|requires_wdm\|importorskip(\"wdm\|importorskip(\"scipy\|>=3\.13\|≥3\.13\|--python 3\.13\|NumPy-only\|requires only NumPy\|depends only on NumPy\|scipy lazily\|from scipy.*lazy" src tests examples benchmarks README.md` to re-check at the end):
+**Grep inventory, every hit assigned to one task** (run `grep -rn -i "active_mask\|requires_wdm\|importorskip(\"wdm\|importorskip(\"scipy\|>=3\.13\|≥3\.13\|--python 3\.13\|3\.13 or newer\|wdm backend\|local backend\|separately installed\|NumPy-only\|requires only NumPy\|depends only on NumPy\|scipy lazily\|from scipy.*lazy" src tests examples benchmarks README.md` to re-check at the end):
 
 | Site | Task |
 |---|---|
@@ -1648,6 +1648,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 **Files:**
 - Modify: `README.md:44-58,292-293,335-339,428-434,579-580,624-625,692-700`, plus a new subsection after line 661 (the end of the "Conventions the loader fixes" list)
 - Modify: `CHANGELOG.md:11-14,23-24,26-33,65-66` (0.4.0 section)
+- Modify: `tests/test_wheel_translation.py:31`, `examples/create_block.ipynb` cell `create-block-21`, `examples/demo.ipynb:286` (stray mentions of the old backend)
 
 Line numbers are from the tree before Task 3: Task 3's README edit (lines 436-449 become 8 lines) shifts every later README line by −6, and this task's own CHANGELOG insertion shifts the lines below it by +3. Every step quotes its anchor text; find by text, not by number.
 
@@ -1658,6 +1659,7 @@ Line numbers are from the tree before Task 3: Task 3's README edit (lines 436-44
 - [ ] README's Mojito section has a "Fitting a window to a WDM grid" subsection with the `factor * Nf * Nt * dt` rule, the 824-sample / 34-minute remainder for Nf = 512 at 0.4 Hz on the full Mojito Light record, and a link to `examples/mojito_wdm_wheel.py`.
 - [ ] CHANGELOG 0.4.0 has the Breaking entry for the core dependencies and the folded layout, an Added entry for `examples/mojito_wdm_wheel.py`, the `Grid` entry without `active_mask`, and the `mojito` extra described as h5py only.
 - [ ] `tests/test_docs.py`, `tests/test_packaging_docs.py` pass.
+- [ ] No file under `src`, `tests`, `examples`, `benchmarks`, `.github` or the README mentions the "WDM backend", a "local backend", "3.13 or newer" or a "separately installed" package; the CHANGELOG mentions them only in the historical 0.3.0 entry.
 
 **Verify:** `.venv/bin/python -m pytest -q tests/test_docs.py tests/test_packaging_docs.py` → pass; `MPLBACKEND=Agg MPLCONFIGDIR=$TMPDIR/mpl .venv/bin/python -m pytest -q --cov=enchilada` → all pass, coverage ≥ 95 %; `.venv/bin/python -m ruff check src tests examples benchmarks && .venv/bin/python -m ruff format --check src tests examples benchmarks && .venv/bin/python -m mypy` → clean.
 
@@ -1813,7 +1815,42 @@ At the top of `### Changed` (before the `Covariance` bullet) add:
 
 Lines 65-66 (the migration note): `` `N * dt**2 * sigma**2` per frequency bin or `dt * sigma**2` per WDM cell. ``
 
-- [ ] **Step 8: Run the gates**
+- [ ] **Step 8: Stray mentions of the old backend**
+
+Three places outside the inventory still describe the private backend. Fix them with text edits (the demo notebook does not round-trip through `json.dumps`, so edit both notebooks as text; the replacement strings are exact).
+
+`tests/test_wheel_translation.py:31`, the `block_reference` docstring: replace `Built by hand, so no test here needs the WDM backend to build a covariance.` with `Built by hand, so no test here needs a WDM transform to build a covariance.`
+
+`examples/create_block.ipynb` (cell `create-block-21`, a markdown cell): replace the three source lines
+
+```
+    "WDM requires the separately installed local backend and Python 3.13 or newer.\n",
+    "The [domain translation notebook](domain_translation.ipynb) demonstrates that\n",
+    "setup and the two division selectors. A block reads the covariance on the grid\n",
+```
+
+with
+
+```
+    "WDM conversions go through domania, a core dependency.\n",
+    "The [domain translation notebook](domain_translation.ipynb) demonstrates the\n",
+    "two division selectors. A block reads the covariance on the grid\n",
+```
+
+`examples/demo.ipynb:286`: delete the sentence ` Its setup installs the optional local WDM backend.` (with its leading space) from the bullet that starts `- **Time, frequency, and WDM**`; the bullet then ends `...lets Wheel prepare each block's chosen representation.\n",`.
+
+Run: `.venv/bin/python - <<'EOF'
+import json
+for name in ("examples/create_block.ipynb", "examples/demo.ipynb"):
+    json.load(open(name))  # still valid JSON
+print("ok")
+EOF`
+Expected: `ok`.
+
+Run: `grep -rn -i "wdm backend\|local backend\|3\.13 or newer\|separately installed" src tests examples benchmarks README.md CHANGELOG.md .github pyproject.toml`
+Expected: only `CHANGELOG.md` lines below `## [0.3.0]` (the historical entry).
+
+- [ ] **Step 9: Run the gates**
 
 Run: `.venv/bin/python -m pytest -q tests/test_docs.py tests/test_packaging_docs.py`
 Expected: pass.
@@ -1824,13 +1861,13 @@ Expected: all pass; `TOTAL` coverage ≥ 95 %.
 Run: `.venv/bin/python -m ruff check src tests examples benchmarks && .venv/bin/python -m ruff format --check src tests examples benchmarks && .venv/bin/python -m mypy`
 Expected: clean.
 
-Run: `grep -rn "active_mask\|requires_wdm\|importorskip(\"wdm\|importorskip(\"scipy\|>=3\.13\|≥3\.13\|--python 3\.13\|NumPy-only\|requires only NumPy\|depends only on NumPy\|scipy lazily\|from scipy.*lazy" src tests examples benchmarks README.md`
+Run: `grep -rn -i "active_mask\|requires_wdm\|importorskip(\"wdm\|importorskip(\"scipy\|>=3\.13\|≥3\.13\|--python 3\.13\|3\.13 or newer\|wdm backend\|local backend\|separately installed\|NumPy-only\|requires only NumPy\|depends only on NumPy\|scipy lazily\|from scipy.*lazy" src tests examples benchmarks README.md`
 Expected: no output.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
-git add README.md CHANGELOG.md
+git add README.md CHANGELOG.md tests/test_wheel_translation.py examples/create_block.ipynb examples/demo.ipynb
 git commit -m "Docs: core dependencies, folded WDM layout, fitting a Mojito window to a WDM grid
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
