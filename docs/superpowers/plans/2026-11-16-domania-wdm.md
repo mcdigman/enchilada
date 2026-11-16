@@ -1681,14 +1681,14 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 **Goal:** The README describes the core dependencies, the folded WDM layout and how to fit a Mojito window to a WDM grid, and the CHANGELOG records the breaking changes and the new example.
 
 **Files:**
-- Modify: `README.md:44-58,292-293,335-339,428-434,579-580,624-625,692-700`, plus a new subsection after line 661 (the end of the "Conventions the loader fixes" list)
+- Modify: `README.md:44-58,292-293,335-339,428-434,579-580,624-625,692-700`, plus a new subsection after the `decimate(data, factor)` paragraph (directly before `## Development`)
 - Modify: `CHANGELOG.md:11-14,23-24,26-33,65-66` (0.4.0 section)
-- Modify: `tests/test_wheel_translation.py:31`, `examples/create_block.ipynb` cells `create-block-19` and `create-block-21`, `examples/demo.ipynb:21,209,286`, `examples/load_mojito.py:3` (stray mentions of the old backend and of scipy as an extra)
+- Modify: `tests/test_wheel_translation.py:31`, `examples/create_block.ipynb` cells `create-block-19` and `create-block-21` and its setup cell (lines 44-46), `examples/demo.ipynb:21,209,286`, `examples/load_mojito.py:3` (stray mentions of the old backend and of scipy as an extra)
 
 Line numbers are from the tree before Task 3: Task 3's README edit (lines 436-449 become 8 lines) shifts every later README line by −6, and this task's own CHANGELOG insertion shifts the lines below it by +3. Every step quotes its anchor text; find by text, not by number.
 
 **Acceptance Criteria:**
-- [ ] `grep -n "active_mask\|inactive\|+ 1, num_time\|NumPy-only\|only on NumPy\|1.26.4\|wdm.yml\|every active point" README.md CHANGELOG.md` prints nothing except the historical 0.3.0 CHANGELOG entries (lines below `## [0.3.0]`).
+- [ ] `grep -n "active_mask\|inactive\|+ 1, num_time\|NumPy-only\|only on NumPy\|1.26.4\|wdm.yml\|every active point" README.md CHANGELOG.md` prints nothing except the 0.4.0 **Breaking** entry (which names `active_mask`, the inactive-zero rules and `wdm.yml` to record their removal) and the historical 0.3.0 CHANGELOG entries (lines below `## [0.3.0]`).
 - [ ] README states the core depends on NumPy ≥ 2.1, SciPy ≥ 1.14.1 and domania ≥ 3.0; `numeric-orbits` adds h5py and lisaorbits; `mojito` adds h5py; `decimate` needs no extra.
 - [ ] README's translation section gives the folded shape `(num_frequency_divisions, num_time_divisions)`, the row-0 slot rule and the pointer to `domania.wilson.grid.cells`.
 - [ ] README's Mojito section has a "Fitting a window to a WDM grid" subsection with the `factor * Nf * Nt * dt` rule, the 824-sample / 34-minute remainder for Nf = 512 at 0.4 Hz on the full Mojito Light record, and a link to `examples/mojito_wdm_wheel.py`.
@@ -1780,7 +1780,7 @@ run at. The loader needs the `mojito` extra; `decimate` needs no extra.
 
 - [ ] **Step 5: README "Fitting a window to a WDM grid"**
 
-Insert after line 661 (`  file's `orbits` group; its BCRS positions are rotated to the ecliptic frame.`, the last bullet of the conventions list) and its following blank line, before the paragraph that starts `` `decimate(data, factor)` applies one fixed anti-alias policy ``:
+Insert after the paragraph that starts `` `decimate(data, factor)` applies one fixed anti-alias policy `` (it ends with the link to `examples/load_mojito.py`) and its following blank line, directly before `## Development`, with one blank line on each side:
 
 ```
 ### Fitting a window to a WDM grid
@@ -1795,10 +1795,9 @@ hundred to a few thousand samples (`Nf = 512` at 0.4 Hz: 824 samples, 34
 minutes). [`examples/mojito_wdm_wheel.py`](examples/mojito_wdm_wheel.py) does
 this arithmetic in `fit_window`, loads a week, decimates by 10, translates the
 record to WDM (`Nf = 512`, `Nt = 472`, `dF = 3.9e-4 Hz`, `dT = 1280 s`) and
-serves a diagnostic block on that grid. `decimate` leaves `edge_samples(factor)`
-(40 samples; see `enchilada.resample`) of filter transient at each end of the
-record; with an exactly fitted window and `Nf >= 40`, as at the example's
-defaults, they fall inside the first and last WDM columns.
+serves a diagnostic block on that grid. The 40 edge-transient samples that
+`decimate` leaves at each end fall inside the first and last WDM columns when
+the window is exactly fitted and `Nf >= 40`, as at the example's defaults.
 
 ```
 
@@ -1880,6 +1879,8 @@ with
 
 `examples/demo.ipynb:21` (the setup paragraph): delete the two sentences ` If you also use an optional external backend such as WDM, install it after `uv sync`; launching with `--no-sync` preserves those installed packages.` (with the leading space), so the paragraph ends `...supplies the dependencies for the ephemeris section."`.
 
+`examples/create_block.ipynb` setup markdown cell (file lines 44-46): replace `"The computations need only enchilada and NumPy on Python 3.12 or newer. Matplotlib\n",` + `"is optional and used for the diagnostic figure. The main tutorial needs no WDM,\n",` + `"Eryn, GBGPU, or orbit package. Installing optional packages after `uv sync`, then\n",` with `"The computations need only enchilada's core dependencies on Python 3.12 or newer.\n",` + `"Matplotlib is optional and used for the diagnostic figure. The main tutorial needs\n",` + `"no Eryn, GBGPU, or orbit package. Installing optional packages after `uv sync`, then\n",`.
+
 `examples/load_mojito.py:3`: `Needs the `mojito` extra (h5py, scipy) and a Mojito L1 file:` becomes `Needs the `mojito` extra (h5py) and a Mojito L1 file:`.
 
 `examples/demo.ipynb:209` (the orbit section's markdown cell): replace the sentence `` `NumericOrbit` needs the `numeric-orbits` extra (`uv sync --extra numeric-orbits`). `` with `` `NumericOrbit` interpolates with SciPy, a core dependency; its file loaders need the `numeric-orbits` extra (`uv sync --extra numeric-orbits`). `` (the rest of the paragraph, from `Here we tabulate`, is unchanged).
@@ -1912,7 +1913,7 @@ Run: `.venv/bin/python -m ruff check src tests examples benchmarks && .venv/bin/
 Expected: clean.
 
 Run: `grep -rn -i "active_mask\|requires_wdm\|importorskip(\"wdm\|importorskip(\"scipy\|>=3\.13\|≥3\.13\|--python 3\.13\|3\.13 or newer\|wdm backend\|local backend\|optional backend\|external backend\|separately installed\|NumPy-only\|requires only NumPy\|depends only on NumPy\|scipy lazily\|from scipy.*lazy" src tests examples benchmarks README.md`
-Expected: no output.
+Expected: only the two `assert not hasattr(..., "active_mask")` lines in `tests/test_domains.py` (Task 1's checks that the attribute is gone).
 
 - [ ] **Step 10: Commit**
 
