@@ -69,7 +69,7 @@
 - Modify: `src/enchilada/_transforms.py:105` (delete the `active_mask` zeroing line; Task 2 rewrites the module)
 - Modify: `tests/conftest.py:45-72` (`white_covariance`)
 - Rewrite: `tests/test_domains.py`
-- Modify: `tests/test_grid.py:19-37`, `tests/test_data.py:124-166`, `tests/test_block_state.py:12-52`, `tests/test_covariance.py:33-42,126-131,172-187,193,288-293,434-445`, `tests/test_translation_review.py:23`, `tests/test_wheel_translation.py:139-140,459`
+- Modify: `tests/test_grid.py:19-37`, `tests/test_data.py:124-166`, `tests/test_block_state.py:12-52`, `tests/test_covariance.py:33-42,126-131,172-187,193,288-293,434-445`, `tests/test_translation_review.py:23`, `tests/test_wheel_translation.py:139-140,232-233,250-262,459`, `tests/test_resample.py:91`
 
 **Acceptance Criteria:**
 - [ ] `WDMGrid(num_frequency_divisions=4, num_time_divisions=8).array_shape == (4, 8)`; neither `WDMGrid` nor `Grid` has an `active_mask` attribute; `Grid("wdm", 64, 1.0, WDMGrid(8, 8)).channel_shape == (8, 8)`.
@@ -77,7 +77,7 @@
 - [ ] A 64-sample `L1Data` built from `(4, 16)` arrays derives `WDMGrid(4, 16)`; from `(16, 4)` arrays it derives `WDMGrid(16, 4)`; a `(16, 4)` template translated with `reference_data` on the `(4, 16)` grid is refused with "WDM shape".
 - [ ] `Covariance` on a WDM grid requires a positive variance at every cell (message "every channel's variance must be positive at every point") and positive definiteness at every cell ("covariance must be positive definite at every point"); the AET derivation of constant XYZ levels on a WDM grid equals the time-domain derivation at every cell.
 - [ ] `white_covariance` on WDM data fills every cell with `sigma**2 / fs`.
-- [ ] `grep -rn active_mask src tests` prints nothing.
+- [ ] `grep -rn active_mask src tests` prints nothing except the two `hasattr(..., "active_mask")` asserts in `tests/test_domains.py` and the two uses in `tests/test_translation.py` (lines 186 and 313, inside `requires_wdm` tests that Task 2 rewrites).
 
 **Verify:** `.venv/bin/python -m pytest -q` → all pass (WDM-backend tests still skip: `wdm` is not installed); `.venv/bin/python -m ruff check src tests examples benchmarks && .venv/bin/python -m ruff format --check src tests examples benchmarks && .venv/bin/python -m mypy` → clean.
 
@@ -586,13 +586,15 @@ Replace `test_wdm_derivation_keeps_structural_zeros` (lines 434-445) with:
 
 `tests/test_wheel_translation.py:459`: `    variances = np.ones(reference.grid.channel_shape)`
 
+Three more WDM-shaped arrays sit in tests that Task 2 otherwise owns; fold them now so the suite stays green: in `tests/test_wheel_translation.py::test_initial_wdm_signal_must_match_selected_grid_before_backend` (line 232-233) `np.zeros((9, 8))` becomes `np.zeros((8, 8))` and the comment reads `# requires shape (4, 16), not the (8, 8) coefficients of an (8, 8) grid.`; in `test_wheel_rejects_mutated_wdm_buffers_with_same_time_sample_count` (lines 250-262) `np.zeros((5, 16))` becomes `np.zeros((4, 16))` and `np.zeros((9, 8))` becomes `np.zeros((8, 8))`; in `tests/test_resample.py:91` (`test_refuses_frequency_and_wdm_input`) `{"A": np.zeros((5, 8))},` becomes `{"A": np.zeros((4, 8))},` so the WDM `L1Data` builds and `decimate` is what refuses it.
+
 - [ ] **Step 13: Run the gates**
 
 Run: `.venv/bin/python -m pytest -q`
 Expected: all pass; the `requires_wdm` tests and `tests/test_translation_example.py` still skip (`wdm` is not installed).
 
 Run: `grep -rn active_mask src tests examples benchmarks | grep -v ipynb`
-Expected: no output (the notebook's `active_mask` is Task 2's).
+Expected: only `tests/test_domains.py` (the two `hasattr` asserts) and `tests/test_translation.py:186,313` (Task 2's).
 
 Run: `.venv/bin/python -m ruff check src tests examples benchmarks && .venv/bin/python -m ruff format --check src tests examples benchmarks && .venv/bin/python -m mypy`
 Expected: clean.
@@ -600,7 +602,7 @@ Expected: clean.
 - [ ] **Step 14: Commit**
 
 ```bash
-git add src/enchilada/domains.py src/enchilada/data.py src/enchilada/covariance.py src/enchilada/_transforms.py tests/conftest.py tests/test_domains.py tests/test_grid.py tests/test_data.py tests/test_block_state.py tests/test_covariance.py tests/test_translation_review.py tests/test_wheel_translation.py
+git add src/enchilada/domains.py src/enchilada/data.py src/enchilada/covariance.py src/enchilada/_transforms.py tests/conftest.py tests/test_domains.py tests/test_grid.py tests/test_data.py tests/test_block_state.py tests/test_covariance.py tests/test_translation_review.py tests/test_wheel_translation.py tests/test_resample.py
 git commit -m "WDM arrays adopt domania's folded (Nf, Nt) layout; active_mask and the inactive-cell rules go
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
@@ -616,7 +618,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Rewrite: `src/enchilada/_transforms.py`
 - Modify: `src/enchilada/translation.py:74,83-87` (docstring)
 - Modify: `tests/test_translation.py` (header; round-trip, regrid and white-noise tests; delete the three backend-error tests; add the seam test)
-- Modify: `tests/test_wheel_translation.py:7,17-19,90,93,126,223-239,250-262,309-320`
+- Modify: `tests/test_wheel_translation.py:7,17-19,90,93,126,223-227,309-313`
 - Modify: `tests/test_initial_block_state.py:3,24-26,121-122,237-251`
 - Modify: `tests/test_translation_review.py:3,91-103`
 - Modify: `tests/test_toy_translation.py:25-26`, `tests/test_gb_example_contract.py:133-134`, `tests/test_translation_example.py:11,26-29,40`
@@ -928,7 +930,7 @@ Expected: all pass.
 
 - [ ] **Step 6: Replace the `_load_wdm` sentinels and the `wdm` skips in the other tests**
 
-`tests/test_wheel_translation.py`: delete line 7 (`import importlib.util`) and lines 17-19 (`requires_wdm = ...`). Lines 90 and 93: `pytest.param("wdm", marks=requires_wdm)` becomes `"wdm"`. Delete the `@requires_wdm` decorator at line 126. Replace lines 223-239 with:
+`tests/test_wheel_translation.py`: delete line 7 (`import importlib.util`) and lines 17-19 (`requires_wdm = ...`). Lines 90 and 93: `pytest.param("wdm", marks=requires_wdm)` becomes `"wdm"`. Delete the `@requires_wdm` decorator at line 126. Replace lines 223-227 (the `def`, the sentinel and its `monkeypatch.setattr`) with:
 
 ```python
 def test_initial_wdm_signal_must_match_selected_grid_before_the_transform(monkeypatch):
@@ -936,24 +938,9 @@ def test_initial_wdm_signal_must_match_selected_grid_before_the_transform(monkey
         raise AssertionError("an invalid initial WDM grid reached domania")
 
     monkeypatch.setattr("enchilada._transforms._wdm_transform", unexpected_transform)
-    data = observations()
-    wheel = Wheel(data)
-    # Both grids represent 64 samples, but selected (Nf, Nt) = (4, 16)
-    # requires shape (4, 16), not the (8, 8) coefficients of an (8, 8) grid.
-    initial = BlockState(
-        template={name: np.zeros((8, 8)) for name in data.channel_names}
-    )
-    with pytest.raises(ValueError, match="shape"):
-        wheel.add(
-            ConstantSignal("wrong_grid", 1.0, "wdm"),
-            initial_block_state=initial,
-            data_domain="wdm",
-            num_frequency_divisions=4,
-            num_time_divisions=16,
-        )
 ```
 
-(the trailing assertions of that test, `assert len(wheel.ledger) == 0` and the residual loop, stay). In `test_wheel_rejects_mutated_wdm_buffers_with_same_time_sample_count` (lines 250-262) change `np.zeros((5, 16))` to `np.zeros((4, 16))` and `np.zeros((9, 8))` to `np.zeros((8, 8))`. Replace lines 309-314 with:
+(the rest of that test is unchanged: Task 1 already folded its `(8, 8)` template and comment). Replace lines 309-314 with:
 
 ```python
 def test_wdm_block_on_a_time_covariance_is_refused_before_the_transform(monkeypatch):
