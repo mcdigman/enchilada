@@ -32,7 +32,8 @@ class L1Data:
             the Nyquist band at time ``j - 1`` in its odd slots. Both axes are
             even, so a transposed coefficient array is accepted as a grid with
             swapped divisions; a template checked against a known grid
-            (`check_on_grid`) still fails on shape.
+            (`check_on_grid`) still fails on shape when the two division counts
+            differ; a square grid cannot detect a transposition.
         sample_rate_hz: Samples per second, in Hz.
         num_time_samples: Underlying time sample count per channel in every
             domain. When omitted, derived from time or WDM array shapes.

@@ -105,6 +105,24 @@ class TestWDMData:
         with pytest.raises(ValueError, match="num_time_samples"):
             replace(data, num_time_samples=64)
 
+    def test_every_cell_is_data_including_row_zero_odd_slots(self):
+        from enchilada.domains import WDMGrid
+
+        grid = WDMGrid(num_frequency_divisions=4, num_time_divisions=8)
+        coefficients = 1.0 + np.arange(grid.num_time_samples, dtype=float).reshape(
+            grid.array_shape
+        )
+        data = L1Data(
+            channel_data={"A": coefficients},
+            sample_rate_hz=2.0,
+            channel_names=("A",),
+            tdi_generation="2.0",
+            physical_observable="fractional_frequency",
+            data_domain="wdm",
+        )
+        assert data.wdm_grid == grid
+        assert np.all(data.channel_data["A"][0, 1::2] != 0)  # Nyquist slots carry data
+
     def test_wdm_requires_coefficient_arrays(self, observed):
         with pytest.raises(TypeError, match="2-D"):
             replace(observed, data_domain="wdm")
@@ -127,6 +145,7 @@ class TestWDMData:
     @pytest.mark.parametrize(
         ("shape", "match"),
         [
+            # the pre-domania padded layout of a (4, 8) grid
             ((5, 8), "positive even integer"),
             ((4, 7), "positive even integer"),
             ((2, 16), "WDM grid division product"),  # well formed, 32 != 64 samples
@@ -176,7 +195,8 @@ class TestWDMData:
         self, observed
     ):
         """Both axes are even, so L1Data cannot tell (16, 4) from (4, 16); a
-        template checked against a known grid still fails on shape."""
+        template checked against a known grid still fails on shape when the
+        division counts differ; a square grid cannot detect a transposition."""
         from enchilada.domains import WDMGrid
 
         swapped = replace(

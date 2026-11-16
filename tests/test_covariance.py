@@ -163,7 +163,7 @@ class TestConstruction:
         np.testing.assert_array_equal(cov.EA, np.conj(cov.AE))
         assert cov.A.dtype == np.complex128 and np.all(cov.A.imag == 0)
 
-    def test_variances_must_be_positive_at_every_active_point(self):
+    def test_variances_must_be_positive_at_every_point(self):
         blocks = stacked((8,), (1.0, 2.0))
         blocks[1, 1, 5] = 0.0
         with pytest.raises(ValueError, match="variance must be positive"):
@@ -425,24 +425,22 @@ class TestInBasis:
         assert np.all(aet.A.imag == 0)
 
     def test_wdm_derivation_matches_the_time_domain_derivation_cell_by_cell(self):
-        levels = dict(zip(XYZ, (1.0, 2.0, 3.0), strict=True))
         wdm = wdm_data(channel_names=XYZ)
+        time = time_data(16, channel_names=XYZ)
+        cells = 1.0 + np.arange(16, dtype=float)  # a different level at every cell
+        levels = dict(zip(XYZ, (1.0, 2.0, 3.0), strict=True))
         aet_wdm = Covariance.like(
             wdm,
             {
-                name: np.full(wdm.grid.channel_shape, level)
+                name: level * cells.reshape(wdm.grid.channel_shape)
                 for name, level in levels.items()
             },
         ).in_basis("AET")
-        time = time_data(16, channel_names=XYZ)
         aet_time = Covariance.like(
-            time, {name: np.full(16, level) for name, level in levels.items()}
+            time, {name: level * cells for name, level in levels.items()}
         ).in_basis("AET")
         assert aet_wdm.grid == wdm.grid
-        expected = aet_time.blocks[:, :, 0][:, :, None, None]
-        np.testing.assert_allclose(
-            aet_wdm.blocks, np.broadcast_to(expected, aet_wdm.blocks.shape)
-        )
+        np.testing.assert_allclose(aet_wdm.blocks.reshape(3, 3, 16), aet_time.blocks)
 
 
 class TestCopies:
