@@ -22,8 +22,6 @@ def toy():
 def test_toy_time_blocks_preserve_draws_on_translated_observations(
     toy, canonical_domain
 ):
-    if canonical_domain == "wdm":
-        pytest.importorskip("wdm", reason="WDM examples require the optional backend")
     data = toy.make_observed()
     options = {"num_frequency_divisions": 8} if canonical_domain == "wdm" else {}
     translated_data = transform(data, canonical_domain, **options)

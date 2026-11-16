@@ -8,8 +8,6 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("wdm", reason="translation example needs the local WDM backend")
-
 EXAMPLE = Path(__file__).resolve().parent.parent / "examples/domain_translation.py"
 
 
@@ -24,8 +22,8 @@ def test_translation_example_preserves_data_and_states_across_domains():
     report = json.loads(result.stdout)
 
     assert report["wdm_shapes"] == {
-        "frequency_selector": [9, 16],
-        "time_selector": [17, 8],
+        "frequency_selector": [8, 16],
+        "time_selector": [16, 8],
     }
     assert report["frequency_roundtrip_max_error"] < 1e-12
     assert report["wdm_roundtrip_max_error"] < 1e-12
@@ -37,7 +35,7 @@ def test_translation_example_preserves_data_and_states_across_domains():
     assert report["sample_calls"] == {"time": 2, "frequency": 2, "wdm": 2}
 
 
-def test_translation_notebook_runs_all_cells_with_real_backend(tmp_path):
+def test_translation_notebook_runs_all_cells_with_domania(tmp_path):
     """Execute the shipped walkthrough, including its numerical assertions."""
     pytest.importorskip("matplotlib", reason="translation notebook draws WDM grids")
     notebook_path = EXAMPLE.with_suffix(".ipynb")

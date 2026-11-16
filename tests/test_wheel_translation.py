@@ -4,7 +4,6 @@ A covariance stays on the grid its owner published it on. A block registered
 on that grid receives it; a block on another grid is refused at run.
 """
 
-import importlib.util
 from dataclasses import dataclass, replace
 
 import numpy as np
@@ -13,10 +12,6 @@ import pytest
 from conftest import white_covariance
 from enchilada import BlockState, Covariance, L1Data, WDMGrid, Wheel, transform
 from enchilada.testing import EchoBlock
-
-requires_wdm = pytest.mark.skipif(
-    importlib.util.find_spec("wdm") is None, reason="local WDM backend is optional"
-)
 
 
 def observations():
@@ -86,12 +81,8 @@ class ConstantSignal:
         return self._render(conditional_residual)
 
 
-@pytest.mark.parametrize(
-    "canonical_domain", ["time", "frequency", pytest.param("wdm", marks=requires_wdm)]
-)
-@pytest.mark.parametrize(
-    "third_domain", ["frequency", pytest.param("wdm", marks=requires_wdm)]
-)
+@pytest.mark.parametrize("canonical_domain", ["time", "frequency", "wdm"])
+@pytest.mark.parametrize("third_domain", ["frequency", "wdm"])
 def test_mixed_blocks_receive_matching_inputs_and_return_canonical_states(
     canonical_domain, third_domain
 ):
@@ -123,7 +114,6 @@ def test_mixed_blocks_receive_matching_inputs_and_return_canonical_states(
         assert wheel.contribution(name)["A"].shape == canonical.channel_data["A"].shape
 
 
-@requires_wdm
 def test_wdm_noise_publication_is_held_on_the_wdm_grid():
     class PixelNoise:
         name = "noise"
@@ -220,11 +210,11 @@ def test_invalid_domain_selection_does_not_register_or_sample():
     assert len(wheel.ledger) == 0
 
 
-def test_initial_wdm_signal_must_match_selected_grid_before_backend(monkeypatch):
-    def unexpected_backend():
-        raise AssertionError("invalid initial WDM grid reached the optional backend")
+def test_initial_wdm_signal_must_match_selected_grid_before_the_transform(monkeypatch):
+    def unexpected_transform(*args, **kwargs):
+        raise AssertionError("an invalid initial WDM grid reached domania")
 
-    monkeypatch.setattr("enchilada._transforms._load_wdm", unexpected_backend)
+    monkeypatch.setattr("enchilada._transforms._wdm_transform", unexpected_transform)
     data = observations()
     wheel = Wheel(data)
     # Both grids represent 64 samples, but selected (Nf, Nt) = (4, 16)
@@ -306,11 +296,11 @@ def test_block_on_another_grid_than_the_covariance_is_refused_at_run():
     np.testing.assert_array_equal(wheel.covariance.A, 0.25)
 
 
-def test_wdm_block_on_a_time_covariance_is_refused_before_the_backend(monkeypatch):
-    def unexpected_backend():
+def test_wdm_block_on_a_time_covariance_is_refused_before_the_transform(monkeypatch):
+    def unexpected_transform(*args, **kwargs):
         raise AssertionError("the grid check must come before any WDM transform")
 
-    monkeypatch.setattr("enchilada._transforms._load_wdm", unexpected_backend)
+    monkeypatch.setattr("enchilada._transforms._wdm_transform", unexpected_transform)
     data = observations()
     wheel = Wheel(data, white_covariance(data, 1.0))
     wheel.add(

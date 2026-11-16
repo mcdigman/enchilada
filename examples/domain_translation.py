@@ -1,12 +1,12 @@
 """Translate data and block states, then run a mixed-domain Wheel.
 
-From the enchilada checkout, with the local WDM checkout beside it:
-    uv sync --python 3.13
-    uv pip install ../wdm
+From the enchilada checkout:
+    uv sync
     uv run --no-sync python examples/domain_translation.py
 
-This example needs only enchilada and the optional local WDM backend.
-The zero-signal blocks exercise representation handoffs without fitting a model.
+This example needs only enchilada; its WDM transforms come from domania, a
+core dependency. The zero-signal blocks exercise representation handoffs
+without fitting a model.
 """
 
 import json

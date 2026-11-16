@@ -71,7 +71,7 @@ def transform(
             reference_data because its grid is intentionally external; its
             covariance carries its own grid and is deep-copied unchanged.
         target_domain: "time", "frequency", or "wdm".
-        num_frequency_divisions: WDM frequency divisions (Nf, yielding Nf+1 rows).
+        num_frequency_divisions: WDM frequency divisions (Nf, the row count).
             Specify this or num_time_divisions on first conversion into WDM.
         num_time_divisions: WDM time divisions. The other count is derived from
             num_time_samples; both counts must be positive even integers. Both
@@ -80,11 +80,9 @@ def transform(
             L1Data on the template's source grid.
 
     Preserves observation metadata, orbit, published physical parameters and a
-    block state's covariance. Signal arrays follow dt*rfft and the WDM backend's
-    normalized-edge convention. A Covariance does not translate between domains:
-    passing one raises TypeError; ``Covariance.copy`` makes an independent copy.
-    WDM coefficient transforms require the separately installed local backend
-    and Python >=3.13. Same-grid copies do not.
+    block state's covariance. Signal arrays follow dt*rfft and domania's folded
+    WDM layout. A Covariance does not translate between domains: passing one
+    raises TypeError; ``Covariance.copy`` makes an independent copy.
     """
     if isinstance(value, Covariance):
         raise TypeError(
