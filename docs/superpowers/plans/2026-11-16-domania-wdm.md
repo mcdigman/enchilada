@@ -1264,7 +1264,8 @@ Lines 32-36:
 dependencies = [
     # domania (the WDM transform) needs numpy>=2.1 and scipy>=1.14.1; scipy is
     # also imported directly by resample.py and orbits.py. The core-minimum CI
-    # lane pins these three floors.
+    # lane pins these three floors. domania is capped below 4 because
+    # enchilada's WDM arrays are domania 3's folded layout.
     "numpy>=2.1",
     "scipy>=1.14.1",
     "domania>=3.0,<4",
@@ -1338,10 +1339,11 @@ Lines 59-61 (the comment above `core-only`):
 ```yaml
   # The core is numpy, scipy and domania. Prove it imports and tests on every
   # supported interpreter, including 3.14 (which the LISA dev stack runs); the
-  # orbit and Mojito tests skip without h5py and lisaorbits.
+  # HDF5-loader, lisaorbits-loader and Mojito tests skip without h5py and
+  # lisaorbits.
 ```
 
-Line 78: `      - name: Test (no coverage gate -- orbit and Mojito tests skip without h5py)`
+Line 78: `      - name: Test (no coverage gate -- HDF5, lisaorbits and Mojito tests skip)`
 
 Lines 81-82 (the comment above `core-minimum`):
 
