@@ -1668,7 +1668,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 **Files:**
 - Modify: `README.md:44-58,292-293,335-339,428-434,579-580,624-625,692-700`, plus a new subsection after line 661 (the end of the "Conventions the loader fixes" list)
 - Modify: `CHANGELOG.md:11-14,23-24,26-33,65-66` (0.4.0 section)
-- Modify: `tests/test_wheel_translation.py:31`, `examples/create_block.ipynb` cells `create-block-19` and `create-block-21`, `examples/demo.ipynb:21,286` (stray mentions of the old backend)
+- Modify: `tests/test_wheel_translation.py:31`, `examples/create_block.ipynb` cells `create-block-19` and `create-block-21`, `examples/demo.ipynb:21,209,286`, `examples/load_mojito.py:3` (stray mentions of the old backend and of scipy as an extra)
 
 Line numbers are from the tree before Task 3: Task 3's README edit (lines 436-449 become 8 lines) shifts every later README line by −6, and this task's own CHANGELOG insertion shifts the lines below it by +3. Every step quotes its anchor text; find by text, not by number.
 
@@ -1680,6 +1680,7 @@ Line numbers are from the tree before Task 3: Task 3's README edit (lines 436-44
 - [ ] CHANGELOG 0.4.0 has the Breaking entry for the core dependencies and the folded layout, an Added entry for `examples/mojito_wdm_wheel.py`, the `Grid` entry without `active_mask`, and the `mojito` extra described as h5py only.
 - [ ] `tests/test_docs.py`, `tests/test_packaging_docs.py` pass.
 - [ ] No file under `src`, `tests`, `examples`, `benchmarks`, `.github` or the README mentions the "WDM backend", a "local backend", an "optional backend", an "external backend", "3.13 or newer" or a "separately installed" package; the CHANGELOG mentions them only in the historical 0.3.0 entry.
+- [ ] Nothing under `src`, `tests`, `examples` or in the README, the 0.4.0 CHANGELOG section or `pyproject.toml` still describes scipy as part of an extra ("h5py, scipy", "scipy>=1.8") or NumPy 1.26.4 as the floor.
 
 **Verify:** `.venv/bin/python -m pytest -q tests/test_docs.py tests/test_packaging_docs.py` → pass; `MPLBACKEND=Agg MPLCONFIGDIR=$TMPDIR/mpl .venv/bin/python -m pytest -q --cov=enchilada` → all pass, coverage ≥ 95 %; `.venv/bin/python -m ruff check src tests examples benchmarks && .venv/bin/python -m ruff format --check src tests examples benchmarks && .venv/bin/python -m mypy` → clean.
 
@@ -1861,6 +1862,10 @@ with
 
 `examples/demo.ipynb:21` (the setup paragraph): delete the two sentences ` If you also use an optional external backend such as WDM, install it after `uv sync`; launching with `--no-sync` preserves those installed packages.` (with the leading space), so the paragraph ends `...supplies the dependencies for the ephemeris section."`.
 
+`examples/load_mojito.py:3`: `Needs the `mojito` extra (h5py, scipy) and a Mojito L1 file:` becomes `Needs the `mojito` extra (h5py) and a Mojito L1 file:`.
+
+`examples/demo.ipynb:209` (the orbit section's markdown cell): replace the sentence `` `NumericOrbit` needs the `numeric-orbits` extra (`uv sync --extra numeric-orbits`). `` with `` `NumericOrbit` interpolates with SciPy, a core dependency; its file loaders need the `numeric-orbits` extra (`uv sync --extra numeric-orbits`). `` (the rest of the paragraph, from `Here we tabulate`, is unchanged).
+
 `examples/create_block.ipynb` cell `create-block-19` (lines 702-703): replace `this tutorial keeps its campaigns in the time domain. The following cell needs no\n",` + `"optional backend: it builds the same white noise on the Fourier grid from the\n",` with `this tutorial keeps its campaigns in the time domain. The following cell builds\n",` + `"the same white noise on the Fourier grid from the\n",` (the rest of the paragraph is unchanged).
 
 Run: `.venv/bin/python - <<'EOF'
@@ -1873,6 +1878,9 @@ Expected: `ok`.
 
 Run: `grep -rn -i "wdm backend\|local backend\|optional backend\|external backend\|optional translation\|3\.13 or newer\|separately installed" src tests examples benchmarks README.md CHANGELOG.md .github pyproject.toml`
 Expected: only `CHANGELOG.md` lines below `## [0.3.0]` (the historical entry).
+
+Run: `grep -rn "h5py, scipy\|scipy>=1.8\|extra (h5py, scipy)\|needs the \`numeric-orbits\` extra\|1\.26\.4" src tests examples README.md CHANGELOG.md pyproject.toml`
+Expected: only `CHANGELOG.md` lines below `## [0.3.0]` (the 0.3.0 entry records the old 1.26.4 floor).
 
 - [ ] **Step 9: Run the gates**
 
@@ -1891,7 +1899,7 @@ Expected: no output.
 - [ ] **Step 10: Commit**
 
 ```bash
-git add README.md CHANGELOG.md tests/test_wheel_translation.py examples/create_block.ipynb examples/demo.ipynb
+git add README.md CHANGELOG.md tests/test_wheel_translation.py examples/create_block.ipynb examples/demo.ipynb examples/load_mojito.py
 git commit -m "Docs: core dependencies, folded WDM layout, fitting a Mojito window to a WDM grid
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
