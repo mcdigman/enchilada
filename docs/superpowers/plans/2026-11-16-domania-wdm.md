@@ -75,7 +75,7 @@
 - [ ] `WDMGrid(num_frequency_divisions=4, num_time_divisions=8).array_shape == (4, 8)`; neither `WDMGrid` nor `Grid` has an `active_mask` attribute; `Grid("wdm", 64, 1.0, WDMGrid(8, 8)).channel_shape == (8, 8)`.
 - [ ] `check_wdm_coefficients` accepts any real floating `(4, 8)` array on that grid, including nonzero odd slots of row 0, and refuses `(5, 8)`, `(4, 7)`, `(2, 16)` and `(32,)` with `ValueError` matching "shape", complex with `TypeError` "real", integer with `TypeError` "floating", a nested list with `TypeError` "numpy array".
 - [ ] A 64-sample `L1Data` built from `(4, 16)` arrays derives `WDMGrid(4, 16)`; from `(16, 4)` arrays it derives `WDMGrid(16, 4)`; a `(16, 4)` template translated with `reference_data` on the `(4, 16)` grid is refused with "WDM shape".
-- [ ] `Covariance` on a WDM grid requires a positive variance at every cell (message "every channel's variance must be positive at every point") and positive definiteness at every cell ("covariance must be positive definite at every point"); the AET derivation of constant XYZ levels on a WDM grid equals the time-domain derivation at every cell.
+- [ ] `Covariance` on a WDM grid requires a positive variance at every cell (message "every channel's variance must be positive at every point") and positive definiteness at every cell ("covariance must be positive definite at every point"); the AET derivation of cell-dependent XYZ levels on a WDM grid equals the time-domain derivation cell by cell.
 - [ ] `white_covariance` on WDM data fills every cell with `sigma**2 / fs`.
 - [ ] `grep -rn active_mask src tests` prints nothing except the two `hasattr(..., "active_mask")` asserts in `tests/test_domains.py` and the two uses in `tests/test_translation.py` (lines 186 and 313, inside `requires_wdm` tests that Task 2 rewrites).
 
@@ -309,7 +309,8 @@ Lines 22-30 of the `channel_data` field docstring become:
             the Nyquist band at time ``j - 1`` in its odd slots. Both axes are
             even, so a transposed coefficient array is accepted as a grid with
             swapped divisions; a template checked against a known grid
-            (`check_on_grid`) still fails on shape.
+            (`check_on_grid`) still fails on shape when the two division counts
+            differ; a square grid cannot detect a transposition.
 ```
 
 In `_resolve_and_check_num_time_samples` (about line 210) change the derivation to:
@@ -411,6 +412,7 @@ Replace `test_inferred_grid_requires_positive_even_divisions` (lines 124-128) wi
     @pytest.mark.parametrize(
         ("shape", "match"),
         [
+            # the pre-domania padded layout of a (4, 8) grid
             ((5, 8), "positive even integer"),
             ((4, 7), "positive even integer"),
             ((2, 16), "WDM grid division product"),  # well formed, 32 != 64 samples
@@ -451,7 +453,8 @@ Replace `test_wdm_validates_each_channel` (lines 148-166) with:
         self, observed
     ):
         """Both axes are even, so L1Data cannot tell (16, 4) from (4, 16); a
-        template checked against a known grid still fails on shape."""
+        template checked against a known grid still fails on shape when the
+        division counts differ; a square grid cannot detect a transposition."""
         from enchilada.domains import WDMGrid
 
         swapped = replace(
@@ -470,6 +473,24 @@ Replace `test_wdm_validates_each_channel` (lines 148-166) with:
         state = BlockState(template=dict(swapped.channel_data))
         with pytest.raises(ValueError, match="WDM shape"):
             transform(state, "wdm", reference_data=reference)
+
+    def test_every_cell_is_data_including_row_zero_odd_slots(self):
+        from enchilada.domains import WDMGrid
+
+        grid = WDMGrid(num_frequency_divisions=4, num_time_divisions=8)
+        coefficients = 1.0 + np.arange(grid.num_time_samples, dtype=float).reshape(
+            grid.array_shape
+        )
+        data = L1Data(
+            channel_data={"A": coefficients},
+            sample_rate_hz=2.0,
+            channel_names=("A",),
+            tdi_generation="2.0",
+            physical_observable="fractional_frequency",
+            data_domain="wdm",
+        )
+        assert data.wdm_grid == grid
+        assert np.all(data.channel_data["A"][0, 1::2] != 0)  # Nyquist slots carry data
 ```
 
 - [ ] **Step 10: Update `tests/test_block_state.py` (lines 12-52)**
@@ -536,7 +557,7 @@ Replace `test_inactive_wdm_pixels_must_be_entirely_zero` (lines 172-187) with:
             Covariance(blocks, channel_names=data.channel_names, grid=data.grid)
 ```
 
-Line 193: `match="positive definite at every point"`.
+Line 166: rename `test_variances_must_be_positive_at_every_active_point` to `test_variances_must_be_positive_at_every_point`. Line 193: `match="positive definite at every point"`.
 
 Replace `test_wdm_structural_zeros` (lines 288-293) with:
 
@@ -553,24 +574,22 @@ Replace `test_wdm_derivation_keeps_structural_zeros` (lines 434-445) with:
 
 ```python
     def test_wdm_derivation_matches_the_time_domain_derivation_cell_by_cell(self):
-        levels = dict(zip(XYZ, (1.0, 2.0, 3.0), strict=True))
         wdm = wdm_data(channel_names=XYZ)
+        time = time_data(16, channel_names=XYZ)
+        cells = 1.0 + np.arange(16, dtype=float)  # a different level at every cell
+        levels = dict(zip(XYZ, (1.0, 2.0, 3.0), strict=True))
         aet_wdm = Covariance.like(
             wdm,
             {
-                name: np.full(wdm.grid.channel_shape, level)
+                name: level * cells.reshape(wdm.grid.channel_shape)
                 for name, level in levels.items()
             },
         ).in_basis("AET")
-        time = time_data(16, channel_names=XYZ)
         aet_time = Covariance.like(
-            time, {name: np.full(16, level) for name, level in levels.items()}
+            time, {name: level * cells for name, level in levels.items()}
         ).in_basis("AET")
         assert aet_wdm.grid == wdm.grid
-        expected = aet_time.blocks[:, :, 0][:, :, None, None]
-        np.testing.assert_allclose(
-            aet_wdm.blocks, np.broadcast_to(expected, aet_wdm.blocks.shape)
-        )
+        np.testing.assert_allclose(aet_wdm.blocks.reshape(3, 3, 16), aet_time.blocks)
 ```
 
 - [ ] **Step 12: Update the two remaining `active_mask` sites**
