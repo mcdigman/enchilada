@@ -1782,7 +1782,9 @@ hundred to a few thousand samples (`Nf = 512` at 0.4 Hz: 824 samples, 34
 minutes). [`examples/mojito_wdm_wheel.py`](examples/mojito_wdm_wheel.py) does
 this arithmetic in `fit_window`, loads a week, decimates by 10, translates the
 record to WDM (`Nf = 512`, `Nt = 472`, `dF = 3.9e-4 Hz`, `dT = 1280 s`) and
-serves a diagnostic block on that grid.
+serves a diagnostic block on that grid. `decimate` leaves `edge_samples(factor)`
+filter-transient samples at each end of the record; with an exactly fitted
+window they fall inside the first and last WDM columns.
 
 ```
 
