@@ -72,14 +72,16 @@ def transform_channels(
             raise ValueError(f"channel_data[{name!r}] must contain finite values")
     if source_domain == target_domain and source_wdm_grid == target_wdm_grid:
         return {name: values.copy() for name, values in channel_data.items()}
+    if source_domain == "wdm" and source_wdm_grid is None:
+        raise ValueError("WDM source requires wdm_grid")
+    if target_domain == "wdm" and target_wdm_grid is None:
+        raise ValueError("WDM target requires wdm_grid")
     sample_interval_s = 1.0 / sample_rate_hz
     channel_names = tuple(channel_data)
     stacked = np.stack([channel_data[name] for name in channel_names])
     if "wdm" in (source_domain, target_domain):
-        if source_domain == "wdm" and source_wdm_grid is None:
-            raise ValueError("WDM source requires wdm_grid")
-        if target_domain == "wdm" and target_wdm_grid is None:
-            raise ValueError("WDM target requires wdm_grid")
+        # domania widens narrow dtypes itself; the cast keeps the dtype handed
+        # to the seam explicit (complex128 from frequency, float64 otherwise).
         if source_domain == "frequency":
             stacked = stacked.astype(
                 np.result_type(stacked.dtype, np.complex128), copy=False

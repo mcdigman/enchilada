@@ -1,4 +1,4 @@
-"""The optional translation walkthrough preserves data and states across domains."""
+"""The translation walkthrough preserves data and states across domains."""
 
 import json
 import os

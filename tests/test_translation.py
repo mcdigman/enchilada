@@ -164,6 +164,21 @@ def test_conversion_checks_nonfinite_data_and_irrelevant_grid_options():
         transform(data, "frequency")
 
 
+def test_transform_refuses_non_finite_output():
+    # Finite input passes the input check; dt * rfft overflows to inf.
+    data = observations(sample_interval_s=1e3)
+    assert data.sample_rate_hz == 1e-3
+    data = replace(
+        data,
+        channel_data={name: np.full(64, 1e308) for name in data.channel_names},
+    )
+    with (
+        np.errstate(over="ignore", invalid="ignore"),
+        pytest.raises(ValueError, match="non-finite coefficients"),
+    ):
+        transform(data, "frequency")
+
+
 @pytest.mark.parametrize("source_domain", ["time", "frequency"])
 @pytest.mark.parametrize("sample_interval_s", [0.125, 10.0])
 def test_domania_wdm_coefficients_and_all_round_trip_routes(
