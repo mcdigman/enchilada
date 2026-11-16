@@ -364,3 +364,85 @@ def test_load_mojito_example_reads_a_synthetic_file(tmp_path, capsys):
     )
     assert proc.returncode != 0
     assert "usage" in (proc.stderr + proc.stdout).lower()
+
+
+def test_mojito_wdm_wheel_example_builds_a_wdm_wheel(tmp_path, capsys):
+    pytest.importorskip("h5py", reason="the Mojito loader needs h5py")
+    from conftest import MOJITO_T0, write_mojito_file
+    from enchilada import WDMGrid
+
+    path = tmp_path / "mojito.h5"
+    write_mojito_file(path, n=4096)  # 1024 s at 4 Hz
+    example = load_example("mojito_wdm_wheel")
+    wheel = example.main(path, num_frequency_divisions=8, factor=4, duration_s=1000.0)
+    residual = wheel.residual()
+    assert residual.data_domain == "wdm"
+    assert residual.wdm_grid == WDMGrid(
+        num_frequency_divisions=8, num_time_divisions=124
+    )
+    assert residual.num_time_samples == 992  # 3968 native samples / 4
+    assert residual.sample_rate_hz == 1.0
+    assert residual.start_time_gps == MOJITO_T0
+    for name in residual.channel_names:
+        assert residual.channel_data[name].shape == (8, 124)
+    out = capsys.readouterr().out
+    assert "window: 992.0 s" in out, out
+    assert "WDM grid: Nf = 8, Nt = 124" in out, out
+    for name in residual.channel_names:
+        assert f"  {name}: rms" in out, out
+    assert out.count("per WDM coefficient") == len(residual.channel_names), out
+    assert "residual: domain wdm" in out, out
+    proc = subprocess.run(
+        [sys.executable, str(EXAMPLES / "mojito_wdm_wheel.py")],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={k: v for k, v in os.environ.items() if k != "ENCHILADA_MOJITO_L1"},
+    )
+    assert proc.returncode != 0
+    assert "usage" in (proc.stderr + proc.stdout).lower()
+
+
+@pytest.mark.parametrize(
+    ("duration_s", "expected"),
+    [
+        (1000.0, (992.0, 124)),  # int(1000 / 8) = 125 columns, rounded down to even
+        (16.0, (16.0, 2)),  # exactly two 8 s columns
+    ],
+)
+def test_fit_window_rounds_down_to_an_even_number_of_columns(duration_s, expected):
+    example = load_example("mojito_wdm_wheel")
+    assert (
+        example.fit_window(duration_s, dt=0.25, factor=4, num_frequency_divisions=8)
+        == expected
+    )
+
+
+def test_fit_window_refuses_a_window_shorter_than_two_columns():
+    example = load_example("mojito_wdm_wheel")
+    with pytest.raises(ValueError, match="fewer than two WDM time columns"):
+        example.fit_window(15.9, dt=0.25, factor=4, num_frequency_divisions=8)
+
+
+REAL_MOJITO_FILE = os.environ.get("ENCHILADA_MOJITO_L1")
+
+
+@pytest.mark.skipif(
+    not REAL_MOJITO_FILE, reason="set ENCHILADA_MOJITO_L1 to a Mojito L1 file"
+)
+def test_mojito_wdm_wheel_example_on_the_real_file(capsys):
+    """A week at Nf = 512: 2,416,640 native samples per channel, decimated by 10
+    to 512 x 472 WDM coefficients. Takes tens of seconds."""
+    h5py = pytest.importorskip("h5py")
+    from enchilada import WDMGrid
+
+    with h5py.File(REAL_MOJITO_FILE, "r") as f:
+        t0 = float(f["tdis/sampling"].attrs["t0"])
+    example = load_example("mojito_wdm_wheel")
+    wheel = example.main(REAL_MOJITO_FILE)
+    residual = wheel.residual()
+    assert residual.wdm_grid == WDMGrid(
+        num_frequency_divisions=512, num_time_divisions=472
+    )
+    assert residual.start_time_gps == t0
+    assert "WDM grid: Nf = 512, Nt = 472" in capsys.readouterr().out
