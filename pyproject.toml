@@ -8,7 +8,7 @@ license-files = ["LICENSE"]
 authors = [
     { name = "Aaron Johnson", email = "aaron9035@gmail.com" },
 ]
-# Floor set by lisaorbits>=3.0.3 (needs >=3.12); core itself only needs numpy.
+# Floor set by domania>=3.0 and lisaorbits>=3.0.3; both need >=3.12.
 requires-python = ">=3.12"
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -31,9 +31,12 @@ keywords = [
     "astronomy",
 ]
 dependencies = [
-    # NumPy 1.26.4 supports the Python 3.12 floor. A separate core-minimum CI
-    # lane pins this version without numeric-orbits raising the NumPy minimum.
-    "numpy>=1.26.4",
+    # domania (the WDM transform) needs numpy>=2.1 and scipy>=1.14.1; scipy is
+    # also imported directly by resample.py and orbits.py. The core-minimum CI
+    # lane pins these three floors.
+    "numpy>=2.1",
+    "scipy>=1.14.1",
+    "domania>=3.0,<4",
 ]
 
 [project.urls]
@@ -44,13 +47,11 @@ Issues = "https://github.com/AaronDJohnson/enchilada/issues"
 
 [project.optional-dependencies]
 numeric-orbits = [
-    "h5py>=3.0",          # h5py.File + dataset reads only
-    "lisaorbits>=3.0.3",  # sets the >=3.12 python floor
-    "scipy>=1.8",         # scipy.interpolate.CubicSpline only
+    "h5py>=3.12.1",       # lisaorbits' own floor; h5py wheels for NumPy 2 begin at 3.11
+    "lisaorbits>=3.0.3",  # sets the >=3.12 python floor with domania
 ]
 mojito = [
-    "h5py>=3.0",          # load_mojito_l1 reads the L1 file
-    "scipy>=1.8",         # decimate (scipy.signal) and the attached NumericOrbit
+    "h5py>=3.12.1",       # load_mojito_l1 reads the L1 file
 ]
 examples = [
     "jupyterlab>=4",
@@ -100,8 +101,7 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 
 [[tool.mypy.overrides]]
-# scipy and h5py ship no type information; they are lazily imported behind the
-# numeric-orbits and mojito extras and their use here is narrow.
+# scipy and h5py ship no type information; their use here is narrow.
 module = ["scipy.*", "h5py.*"]
 ignore_missing_imports = true
 

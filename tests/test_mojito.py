@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 
 pytest.importorskip("h5py", reason="the Mojito loader needs h5py")
-pytest.importorskip("scipy", reason="the attached NumericOrbit needs scipy")
 
 from conftest import (  # noqa: E402
     MOJITO_DT,

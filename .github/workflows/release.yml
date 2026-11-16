@@ -73,21 +73,27 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
           python-version: "3.12"
-      # uv sync also resolves extras, allowing lisaorbits to raise the floor.
-      - name: Install the core at its NumPy floor
+      # Install the core at its declared floors without the extras.
+      - name: Install the core at its dependency floors
         run: |
           uv venv --python 3.12
-          uv pip install --only-binary numpy --group dev -e . "numpy==1.26.4"
+          uv pip install --only-binary numpy --only-binary scipy --group dev -e . "numpy==2.1.0" "scipy==1.14.1" "domania==3.0.0"
       - name: Verify the tested dependency boundary
         run: |
           uv run --no-sync python - <<'PY'
           import importlib.util
-          import numpy
 
-          assert numpy.__version__ == "1.26.4", numpy.__version__
-          for name in ("scipy", "h5py", "lisaorbits", "wdm"):
+          import domania
+          import numpy
+          import scipy
+
+          assert numpy.__version__ == "2.1.0", numpy.__version__
+          assert scipy.__version__ == "1.14.1", scipy.__version__
+          assert domania.__version__ == "3.0.0", domania.__version__
+          for name in ("h5py", "lisaorbits"):
               assert importlib.util.find_spec(name) is None, name
-          print("core minimum: NumPy", numpy.__version__)
+          print("core minimum: NumPy", numpy.__version__, "SciPy", scipy.__version__,
+                "domania", domania.__version__)
           PY
       - run: uv run --no-sync pytest -q
 
@@ -106,13 +112,8 @@ jobs:
       # Keep the environment resolved above instead of re-locking with highest.
       - run: uv run --no-sync pytest -q
 
-  wdm:
-    uses: $/.github/workflows/wdm.yml
-    secrets:
-      WDM_DEPLOY_KEY: ${{ secrets.WDM_DEPLOY_KEY }}
-
   build:
-    needs: [gate, core-only, core-minimum, floors, wdm]
+    needs: [gate, core-only, core-minimum, floors]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

@@ -10,8 +10,8 @@ interpolates tabulated positions with cubic splines.
 accepts in-memory tables. Positions use ecliptic Cartesian metres; loaders rotate
 equatorial input when ``coordinate_frame="equatorial"``.
 
-The core requires only NumPy. NumericOrbit loads SciPy for interpolation and
-its HDF5 loader imports h5py on demand.
+NumericOrbit interpolates with SciPy, a core dependency; its HDF5 loader
+imports h5py on demand (the ``numeric-orbits`` or ``mojito`` extra).
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from typing import Protocol, runtime_checkable
 
 import numpy as np
 from numpy.typing import NDArray
+from scipy.interpolate import CubicSpline
 
 SPEED_OF_LIGHT_M_PER_S = 299792458.0  # m/s
 # J2000 mean obliquity of the ecliptic, used for the equatorial-to-ecliptic rotation.
@@ -115,8 +116,6 @@ class NumericOrbit:
         nominal_arm_length_m: float | None = None,
         transfer_frequency_hz: float | None = None,
     ) -> None:
-        from scipy.interpolate import CubicSpline  # optional orbit dependency
-
         self._sample_times_gps = np.array(
             sample_times_gps, dtype=float, order="C", copy=True
         )

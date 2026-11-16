@@ -5,10 +5,8 @@ import math
 import numpy as np
 import pytest
 
-pytest.importorskip("scipy", reason="decimate needs scipy.signal")
-
-from enchilada import L1Data, decimate  # noqa: E402
-from enchilada.resample import anti_alias_taps, edge_samples  # noqa: E402
+from enchilada import L1Data, decimate
+from enchilada.resample import anti_alias_taps, edge_samples
 
 T0 = 97729889.327664  # Mojito's first L1 sample, TCB seconds after the LISA epoch
 FS = 4.0

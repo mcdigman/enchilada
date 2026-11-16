@@ -7,13 +7,14 @@ polyphase filtering. The policy is fixed rather than exposed as parameters so
 every campaign decimates the same way; a different policy is a different
 function.
 
-Imports scipy lazily; the core package stays NumPy-only.
+SciPy is a core dependency, so ``decimate`` needs no extra.
 """
 
 from __future__ import annotations
 
 import numpy as np
 from numpy.typing import NDArray
+from scipy.signal import firwin, kaiserord, resample_poly
 
 from enchilada.data import L1Data
 
@@ -34,8 +35,6 @@ def anti_alias_taps(factor: int) -> NDArray[np.float64]:
     length so the polyphase filter is exactly zero-phase, unit DC gain. About
     ``78 * factor`` taps.
     """
-    from scipy.signal import firwin, kaiserord  # lazy: optional dependency
-
     transition_width = (1.0 - PASSBAND_FRACTION) / factor  # of the input Nyquist
     numtaps, beta = kaiserord(STOPBAND_ATTENUATION_DB, transition_width)
     numtaps = int(numtaps) | 1
@@ -84,7 +83,6 @@ def decimate(data: L1Data, factor: int) -> L1Data:
         raise TypeError(f"factor must be an integer, got {factor!r}")
     if factor < 2:
         raise ValueError(f"factor must be at least 2, got {factor}")
-    from scipy.signal import resample_poly  # lazy: optional dependency
 
     factor = int(factor)
     taps = anti_alias_taps(factor)

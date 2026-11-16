@@ -53,7 +53,6 @@ def test_notebook_code_cells_execute():
     code = "\n\n".join(
         "".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code"
     )
-    pytest.importorskip("scipy", reason="notebook orbit cells need scipy")
     proc = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True, timeout=180
     )
@@ -343,7 +342,6 @@ def test_white_noise_prior_requires_time_data():
 
 def test_load_mojito_example_reads_a_synthetic_file(tmp_path, capsys):
     pytest.importorskip("h5py", reason="the Mojito loader needs h5py")
-    pytest.importorskip("scipy", reason="decimate needs scipy")
     from conftest import write_mojito_file
 
     path = tmp_path / "mojito.h5"

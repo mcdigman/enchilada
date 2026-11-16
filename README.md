@@ -433,21 +433,14 @@ and `None` for time or frequency data; copies preserve the grid. Choose division
 counts through `transform` or `Wheel.add(data_domain="wdm", ...)`, rather than
 passing `wdm_grid` to `L1Data`.
 
-Time/Fourier transforms use only NumPy. WDM uses the unpublished local `wdm`
-checkout and requires Python ≥3.13, NumPy `>=2.1,<3`, and SciPy `>=1.14.1,<2`.
-With sibling checkouts, run from the enchilada directory:
+Time/Fourier transforms are plain NumPy FFTs. WDM conversions go through
+[domania](https://pypi.org/project/domania/), a core dependency, so a plain
+project sync is enough to run them:
 
 ```sh
-uv sync --python 3.13
-uv pip install ../wdm
+uv sync
 uv run --no-sync python examples/domain_translation.py
 ```
-
-Adjust `../wdm` to its local location. Install it after project sync and use
-`--no-sync` to preserve the environment. This does not change the core package's
-Python ≥3.12 or NumPy-only requirements.
-The [WDM integration workflow](.github/workflows/wdm.yml) records the tested
-backend version and pinned revision.
 
 Select a representation when registering a block:
 

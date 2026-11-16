@@ -3,8 +3,6 @@
 import numpy as np
 import pytest
 
-pytest.importorskip("scipy", reason="orbits need the numeric-orbits extra")
-
 from enchilada import NumericOrbit
 from enchilada.orbits import _DEFAULT_NOMINAL_ARM_LENGTH_M, _J2000_OBLIQUITY_RAD, Orbit
 
