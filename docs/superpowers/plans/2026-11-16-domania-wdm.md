@@ -1681,7 +1681,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 **Goal:** The README describes the core dependencies, the folded WDM layout and how to fit a Mojito window to a WDM grid, and the CHANGELOG records the breaking changes and the new example.
 
 **Files:**
-- Modify: `README.md:44-58,292-293,335-339,428-434,579-580,624-625,692-700`, plus a new subsection after the `decimate(data, factor)` paragraph (directly before `## Development`)
+- Modify: `README.md:28,44-58,292-293,335-339,428-434,579-580,624-625,692-700`, plus a new subsection after the `decimate(data, factor)` paragraph (directly before `## Development`)
 - Modify: `CHANGELOG.md:11-14,23-24,26-33,65-66` (0.4.0 section)
 - Modify: `tests/test_wheel_translation.py:31`, `examples/create_block.ipynb` cells `create-block-19` and `create-block-21` and its setup cell (lines 44-46), `examples/demo.ipynb:21,209,286`, `examples/load_mojito.py:3` (stray mentions of the old backend and of scipy as an extra)
 
@@ -1691,7 +1691,7 @@ Line numbers are from the tree before Task 3: Task 3's README edit (lines 436-44
 - [ ] `grep -n "active_mask\|inactive\|+ 1, num_time\|NumPy-only\|only on NumPy\|1.26.4\|wdm.yml\|every active point" README.md CHANGELOG.md` prints nothing except the 0.4.0 **Breaking** entry (which names `active_mask`, the inactive-zero rules and `wdm.yml` to record their removal) and the historical 0.3.0 CHANGELOG entries (lines below `## [0.3.0]`).
 - [ ] README states the core depends on NumPy ≥ 2.1, SciPy ≥ 1.14.1 and domania ≥ 3.0; `numeric-orbits` adds h5py and lisaorbits; `mojito` adds h5py; `decimate` needs no extra.
 - [ ] README's translation section gives the folded shape `(num_frequency_divisions, num_time_divisions)`, the row-0 slot rule and the pointer to `domania.wilson.grid.cells`.
-- [ ] README's Mojito section has a "Fitting a window to a WDM grid" subsection with the `factor * Nf * Nt * dt` rule, the 824-sample / 34-minute remainder for Nf = 512 at 0.4 Hz on the full Mojito Light record, and a link to `examples/mojito_wdm_wheel.py`.
+- [ ] README's Mojito section has a "Fitting a window to a WDM grid" subsection with the `factor * Nf * Nt * dt` rule, the 824-sample / 34-minute remainder for Nf = 512 at 0.4 Hz on the full Mojito Light record, and a link to `examples/mojito_wdm_wheel.py`; the README's Python-floor sentence credits domania and lisaorbits; `NumericOrbit` is described as needing only the core, its file loaders the extra.
 - [ ] CHANGELOG 0.4.0 has the Breaking entry for the core dependencies and the folded layout, an Added entry for `examples/mojito_wdm_wheel.py`, the `Grid` entry without `active_mask`, and the `mojito` extra described as h5py only.
 - [ ] `tests/test_docs.py`, `tests/test_packaging_docs.py` pass.
 - [ ] No file under `src`, `tests`, `examples`, `benchmarks`, `.github` or the README mentions the "WDM backend", a "local backend", an "optional backend", an "external backend", "3.13 or newer" or a "separately installed" package; the CHANGELOG mentions them only in the historical 0.3.0 entry.
@@ -1701,7 +1701,9 @@ Line numbers are from the tree before Task 3: Task 3's README edit (lines 436-44
 
 **Steps:**
 
-- [ ] **Step 1: README install paragraph and block (lines 44-58)**
+- [ ] **Step 1: README install paragraph and block (lines 28, 44-58)**
+
+Line 28: `Requires Python ≥ 3.12 (floor set by lisaorbits).` becomes `Requires Python ≥ 3.12 (floor set by domania and lisaorbits).`
 
 Replace from `The core package depends only on NumPy` through the closing fence of the install block with:
 
@@ -1713,9 +1715,10 @@ are confined to the optional galactic-binary example. Installing enchilada or
 any of its extras does not install them; running that example requires the
 separate `examples/requirements-gb.txt` installation described below.
 
-Loading tabulated spacecraft ephemerides (`enchilada.orbits.NumericOrbit`)
-needs the `numeric-orbits` extra; reading Mojito L1 files (`enchilada.mojito`)
-needs the `mojito` extra. Decimating (`enchilada.resample`) needs no extra:
+`enchilada.orbits.NumericOrbit` interpolates with SciPy, a core dependency; its
+file loaders (`from_hdf5`, `from_lisaorbits`) need the `numeric-orbits` extra,
+and reading Mojito L1 files (`enchilada.mojito`) needs the `mojito` extra.
+Decimating (`enchilada.resample`) needs no extra:
 
 ```sh
 uv sync --extra numeric-orbits   # adds h5py, lisaorbits
@@ -1790,8 +1793,8 @@ after decimation, both counts even, and neither `transform` nor the loader pads
 or trims. Choose `Nf`, take the largest even `Nt` with
 `factor * Nf * Nt * dt <= duration`, and pass `factor * Nf * Nt * dt` as
 `duration_s` to `load_mojito_l1`. The full Mojito Light record (252,465,200
-samples) does not factor onto any power-of-two `Nf`, so a campaign drops a few
-hundred to a few thousand samples (`Nf = 512` at 0.4 Hz: 824 samples, 34
+samples; 25,246,520 after decimating by 10) is rarely an exact multiple of
+`Nf * Nt` with even `Nt`; at `Nf = 512` and 0.4 Hz it drops 824 samples (34
 minutes). [`examples/mojito_wdm_wheel.py`](examples/mojito_wdm_wheel.py) does
 this arithmetic in `fit_window`, loads a week, decimates by 10, translates the
 record to WDM (`Nf = 512`, `Nt = 472`, `dF = 3.9e-4 Hz`, `dT = 1280 s`) and
