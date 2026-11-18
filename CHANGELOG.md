@@ -12,6 +12,16 @@ All notable changes to enchilada are documented here. The format follows
   `wdm_grid`) with `channel_shape`, `active_mask`, `observation_duration_s` and
   `same_record`; `L1Data.grid` returns the data's grid and `enchilada.domains`
   owns `DOMAINS`.
+- `enchilada.mojito.load_mojito_l1`: reads a DDPC Mojito L1 HDF5 file (TDI
+  2.0 `X2`…`T2` stored in Hz) into a time-domain `L1Data` in fractional
+  frequency on a chosen window, with the file's `tdis/sampling` clock in
+  `start_time_gps` (TCB seconds after the LISA epoch) and its orbit table
+  attached; a window with nonzero `tdi_flags` is refused.
+- `enchilada.resample.decimate`: anti-aliased rate reduction of time-domain
+  `L1Data` by an integer factor (Kaiser FIR, 120 dB, passband to 0.8 of the
+  new Nyquist, zero-phase) keeping `start_time_gps`; `edge_samples` gives the
+  transient length. Both functions are exported from `enchilada`.
+- Optional extra `mojito` (h5py, scipy) for loading data without lisaorbits.
 
 ### Changed
 

@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 import enchilada
-from enchilada import BlockState, L1Data, Wheel
+from enchilada import BlockState, L1Data, Wheel, decimate, load_mojito_l1
 
 README = Path(__file__).resolve().parent.parent / "README.md"
 
@@ -52,6 +52,8 @@ _CALLABLES = {
     "BlockState": BlockState,
     "L1Data": L1Data,
     "Wheel": Wheel,
+    "decimate": decimate,
+    "load_mojito_l1": load_mojito_l1,
     "check_block": None,  # filled below; testing imports lazily
 }
 
@@ -121,7 +123,7 @@ def test_readme_names_only_real_exports():
     # an attribute lookup.
     prose = re.sub(r"https?://\S+", "", README.read_text())
     mentioned = set(re.findall(r"\benchilada\.([A-Za-z_][A-Za-z0-9_]*)", prose))
-    submodules = {"testing", "orbits", "data", "block", "wheel"}
+    submodules = {"testing", "orbits", "data", "block", "wheel", "mojito", "resample"}
     for name in mentioned - submodules:
         assert hasattr(enchilada, name), (
             f"README references enchilada.{name}, which does not exist"

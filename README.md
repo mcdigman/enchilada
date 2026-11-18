@@ -46,13 +46,15 @@ are confined to the optional galactic-binary example. Installing enchilada or
 any of its extras does not install them; running that example requires the
 separate `examples/requirements-gb.txt` installation described below.
 
-Loading tabulated spacecraft
-ephemerides (`enchilada.orbits.NumericOrbit`) needs the extra:
+Loading tabulated spacecraft ephemerides (`enchilada.orbits.NumericOrbit`)
+needs the `numeric-orbits` extra; reading Mojito L1 files and decimating
+(`enchilada.mojito`, `enchilada.resample`) needs the `mojito` extra:
 
 ```sh
 uv sync --extra numeric-orbits   # adds h5py, scipy, lisaorbits
+uv sync --extra mojito           # or this: adds h5py, scipy (no lisaorbits)
 
-# For the notebooks, install both extras together:
+# For the notebooks, install the orbit and example extras together:
 uv sync --extra numeric-orbits --extra examples
 uv run --no-sync jupyter lab examples/demo.ipynb
 ```
@@ -509,7 +511,7 @@ Scientific shorthand is part of the API:
 | --- | --- | --- |
 | Sample rate in Hz | `sample_rate_hz` | `fs` |
 | Time sample count | `num_time_samples` | `N` |
-| Start time in GPS seconds | `start_time_gps` | `t0` |
+| Start time in seconds (GPS by convention; see the Mojito section for TCB) | `start_time_gps` | `t0` |
 | Observation duration in seconds | `observation_duration_s` | `Tobs` |
 | Sample interval in seconds | `sample_interval_s` | `dt` |
 | Fourier bin width in Hz | `frequency_resolution_hz` | `df` |
@@ -574,8 +576,9 @@ The constellation ephemeris the data was produced with rides on
 `L1Data.orbit_ephemeris` so every block builds its response from the *same*
 spacecraft positions. `enchilada.orbits.NumericOrbit` tabulates and
 cubic-spline-interpolates an ephemeris, with loaders for LDC/Mojito-style
-HDF5 files (`from_hdf5`) and lisaorbits objects (`from_lisaorbits`); both
-need the `numeric-orbits` extra.
+HDF5 files (`from_hdf5`, which needs h5py and scipy from either the
+`numeric-orbits` or the `mojito` extra) and lisaorbits objects
+(`from_lisaorbits`, which needs `numeric-orbits`).
 
 `Orbit` exposes `nominal_arm_length_m`, `transfer_frequency_hz`, and
 `positions(times_gps)`. `NumericOrbit.time_range_gps` gives the tabulated span,
@@ -611,6 +614,66 @@ coordinate_frame="equatorial")` samples the external model through its
 [`src/enchilada/orbits.py`](https://github.com/AaronDJohnson/enchilada/blob/main/src/enchilada/orbits.py) for frames and
 conventions.
 
+## Loading Mojito L1 data
+
+`enchilada.mojito.load_mojito_l1` reads a DDPC Mojito L1 HDF5 file (Common
+Dataset 1; verified on Mojito Light, and Mojito Heavy shares the layout but
+its flagged gaps must be excluded from the window) into a time-domain
+`L1Data`, and
+`enchilada.resample.decimate` reduces the 4 Hz record to a rate a campaign can
+run at. Both need the `mojito` extra.
+
+```python
+from enchilada import decimate, load_mojito_l1
+
+observed = load_mojito_l1(
+    "mojito_light_731d_0.25s_L1_0_0_20251218T000909441368Z.h5",
+    channels=("A", "E", "T"),  # any of A, E, T, X, Y, Z; dataset tdis/<name>2
+    start_offset_s=0.0,  # seconds after the file's first sample
+    duration_s=30 * 86400.0,  # None reads to the end of the file
+)  # orbit=True (default) attaches the file's ephemeris
+campaign_data = decimate(observed, 10)  # 4 Hz -> 0.4 Hz
+```
+
+Conventions the loader fixes:
+
+- **Units.** The file stores TDI in total-frequency units (Hz). The loader
+  divides by the root attribute `laser_frequency` (281.6 THz) and labels the
+  result `physical_observable="fractional_frequency"`, so templates in the
+  usual fractional-frequency convention need no scaling. `tdi_generation` is
+  `"2.0"`.
+- **Clock.** `start_time_gps` is `t0 + n0 * dt` from `tdis/sampling`, with
+  `n0` the start offset in samples, on the file's clock: TCB seconds after the
+  LISA reference epoch, not GPS. The orbit table is on the same clock, so
+  `L1Data`'s orbit-span check and the blocks' response computations see one
+  clock.
+- **Window.** The start offset rounds to the nearest sample and the duration
+  rounds down to whole samples; a window outside the file is refused with the
+  file's span in the message. Omitting `duration_s` reads to the end of the
+  file, which for the full Mojito Light record is about 2 GB per channel at
+  the native 4 Hz; choose a window and decimate it.
+- **Flags.** Any nonzero `tdi_flags` value in the window is refused, with the
+  count and the first flagged sample; enchilada has no gap mask (see
+  [Known limitations](#known-limitations)). Mojito Light sets no flags.
+- **Channels.** The stored A/E/T equal the orthonormal combination of X/Y/Z
+  that `Covariance.in_basis` uses, so either triple converts consistently.
+- **Orbit.** With `orbit=True` (default), `NumericOrbit.from_hdf5` reads the
+  file's `orbits` group; its BCRS positions are rotated to the ecliptic frame.
+
+`decimate(data, factor)` applies one fixed anti-alias policy: a Kaiser-window
+FIR low-pass with 120 dB stopband attenuation, passband edge at 0.8 times the
+new Nyquist frequency and stopband edge at the new Nyquist (about
+`78 * factor` taps), applied zero-phase by polyphase filtering. The result has
+`ceil(N / factor)` samples at `fs / factor` and the same `start_time_gps`,
+because output sample `k` sits at input sample `k * factor`. The first and
+last `enchilada.resample.edge_samples(factor)` output samples (40) carry
+the filter's edge transient; nothing is trimmed. The DDPC's own 0.4 Hz bricks
+start 50.5 s after the 4 Hz data, so decimated output does not line up sample
+for sample with them. Decimating 2^24 samples by 10 takes about 2.7 s with a
+55 MB peak allocation, so one full 252-million-sample Mojito channel takes
+about 40 s; the one-day example runs in well under a second. See
+[`examples/load_mojito.py`](examples/load_mojito.py).
+
 ## Development
 
 Use this README and the [block authoring tutorial](examples/create_block.ipynb)
@@ -618,8 +681,8 @@ for the current API, and the [translation notebook](examples/domain_translation.
 for converting data and block states between representations.
 
 ```sh
-uv sync --extra numeric-orbits   # dev group (pytest, pytest-cov, ruff, mypy)
-uv run --no-sync pytest                    # full suite, incl. examples and orbit loaders
+uv sync --extra numeric-orbits --extra mojito   # dev group (pytest, pytest-cov, ruff, mypy)
+uv run --no-sync pytest                    # full suite, incl. examples, orbit and Mojito loaders
 uv run --no-sync pytest --cov --cov-report=term-missing   # coverage (gate: 95%)
 uv run --no-sync mypy                      # enchilada ships py.typed; keep it honest
 uv run --no-sync ruff check src tests examples benchmarks
@@ -630,7 +693,7 @@ CI runs lint, formatting, mypy, the suite behind a 95% coverage gate, artifact
 builds, and an installed-wheel smoke test across Python 3.12/3.13 on Linux and
 macOS, with core-only checks through Python 3.14. A separate Python 3.12 job tests
 the core at NumPy 1.26.4 without orbit dependencies; another job resolves the
-numeric-orbit dependency floors. The optional WDM integration job installs a
+numeric-orbit and mojito dependency floors. The optional WDM integration job installs a
 pinned backend revision and runs the numerical and notebook checks. Tag pushes
 matching `v*` run these gates before PyPI Trusted Publishing. Manual release
 dispatches build and validate artifacts without publishing, including on tags. See
@@ -642,7 +705,8 @@ Deliberate scope decisions, recorded so they are choices rather than
 oversights:
 
 - **No data-quality / gap mask.** Wheel requires complete finite observation arrays.
-  Fill or trim gaps before constructing a campaign. A future data-gap interface
+  Fill or trim gaps before constructing a campaign; `load_mojito_l1` refuses a
+  window that contains flagged samples for this reason. A future data-gap interface
   must define how masking affects residual arithmetic, sampling grids, and
   windowing.
 - **One noise model at a time.** `Wheel.covariance` is a single slot, so two

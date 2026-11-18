@@ -44,7 +44,9 @@ class L1Data:
         wdm_grid: Read-only metadata derived from WDM array shapes; None in
             other domains. Managed automatically, not a constructor argument.
             Sample rate and epoch still refer to the time series.
-        start_time_gps: GPS seconds at sample index zero; defaults to 0.0.
+        start_time_gps: Seconds at sample index zero on the data's clock (GPS by
+            convention; a loader may document another, e.g. TCB for Mojito
+            files); defaults to 0.0.
             Defines sample times ``start_time_gps + n*dt``. Alias: `t0`.
         orbit_ephemeris: Optional `Orbit`, shared by reference with blocks and
             treated as immutable. Declared `time_range_gps` must cover all sample
@@ -131,7 +133,7 @@ class L1Data:
             )
         if not np.isfinite(self.start_time_gps):
             raise ValueError(
-                f"start_time_gps must be finite GPS seconds, "
+                f"start_time_gps must be a finite number of seconds, "
                 f"got {self.start_time_gps!r}"
             )
         if not isinstance(self.tdi_generation, str) or not self.tdi_generation:
@@ -404,7 +406,7 @@ class L1Data:
 
     @property
     def t0(self) -> float:
-        """LISA shorthand for `start_time_gps` (GPS seconds)."""
+        """LISA shorthand for `start_time_gps` (seconds on the data's clock)."""
         return self.start_time_gps
 
     # ---- domain transforms (fixing the campaign's FFT convention) ------

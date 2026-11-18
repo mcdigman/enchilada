@@ -185,7 +185,7 @@ class NumericOrbit:
 
     @property
     def time_range_gps(self) -> tuple[float, float]:
-        """Inclusive start and end of the tabulated grid in GPS seconds."""
+        """Inclusive first and last tabulated times (seconds on the data's clock)."""
         return (float(self._sample_times_gps[0]), float(self._sample_times_gps[-1]))
 
     def positions(

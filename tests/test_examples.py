@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -338,3 +339,30 @@ def test_white_noise_prior_requires_time_data():
         toy.draw_white_noise_prior(
             block, toy.make_observed().to_frequency(), rng=np.random.default_rng(0)
         )
+
+
+def test_load_mojito_example_reads_a_synthetic_file(tmp_path, capsys):
+    pytest.importorskip("h5py", reason="the Mojito loader needs h5py")
+    pytest.importorskip("scipy", reason="decimate needs scipy")
+    from conftest import write_mojito_file
+
+    path = tmp_path / "mojito.h5"
+    write_mojito_file(path, n=4096)  # 1024 s at 4 Hz
+    example = load_example("load_mojito")
+    data = example.main(path, duration_s=1000.0, factor=4)
+    assert data.num_time_samples == 1000
+    assert data.sample_rate_hz == 1.0
+    out = capsys.readouterr().out
+    for fragment in ("native grid", "decimated grid", "orbit span"):
+        assert fragment in out, out
+    for name in data.channel_names:
+        assert f"  {name}: rms" in out, out
+    proc = subprocess.run(
+        [sys.executable, str(EXAMPLES / "load_mojito.py")],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={k: v for k, v in os.environ.items() if k != "ENCHILADA_MOJITO_L1"},
+    )
+    assert proc.returncode != 0
+    assert "usage" in (proc.stderr + proc.stdout).lower()
