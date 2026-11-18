@@ -13,12 +13,21 @@ import time
 
 import numpy as np
 
-from enchilada import BlockState, Covariance, L1Data, Wheel
+from enchilada import Covariance, L1Data, Wheel
 
 
 class FixedSignal:
-    def __init__(self, name):
+    def __init__(self, name, level):
         self.name = name
+        self.level = level
+
+    def initial_sample(self, conditional_residual, covariance, *, rng):
+        return conditional_residual.block_state(
+            {
+                name: np.full_like(values, self.level)
+                for name, values in conditional_residual.channel_data.items()
+            }
+        )
 
     def sample(self, conditional_residual, covariance, current_block_state, *, rng):
         return current_block_state
@@ -37,13 +46,7 @@ def measure(num_blocks, num_samples, num_cycles, repeats):
     )
     wheel = Wheel(observed, covariance, random_seed=0)
     for index in range(num_blocks):
-        initial = BlockState(
-            template={
-                name: np.full_like(values, 0.5 / num_blocks)
-                for name, values in observed.channel_data.items()
-            }
-        )
-        wheel.add(FixedSignal(str(index)), initial_block_state=initial)
+        wheel.add(FixedSignal(str(index), 0.5 / num_blocks))
     wheel.run(1)
     elapsed = []
     for _ in range(repeats):

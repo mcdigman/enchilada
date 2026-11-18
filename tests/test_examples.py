@@ -76,22 +76,9 @@ def test_toy_prior_is_random_and_separate_campaigns_are_reproducible():
     toy = load_example("toy_fit")
     observed = toy.make_observed()
     campaigns = [Wheel(observed, random_seed=seed) for seed in (42, 42, 43)]
-    for wheel, initialization_seed in zip(campaigns, (42, 42, 43), strict=True):
-        signal = toy.SineBlock(name="slow", freq=0.004)
-        noise = toy.WhiteNoiseBlock(name="noise")
-        initialization_rng = np.random.default_rng(initialization_seed)
-        wheel.add(
-            signal,
-            initial_block_state=toy.draw_sine_prior(
-                signal, observed, rng=initialization_rng
-            ),
-        )
-        wheel.add(
-            noise,
-            initial_block_state=toy.draw_white_noise_prior(
-                noise, observed, rng=initialization_rng
-            ),
-        )
+    for wheel in campaigns:
+        wheel.add(toy.SineBlock(name="slow", freq=0.004))
+        wheel.add(toy.WhiteNoiseBlock(name="noise"))
     priors = [w.ledger["slow"].parameters["amplitude"] for w in campaigns]
     assert priors[0] == priors[1]
     assert priors[0] != priors[2]
@@ -120,7 +107,7 @@ def test_sine_conditional_includes_declared_amplitude_prior():
     )
     noise = white_covariance(data, 2.0)
     signal = toy.SineBlock("signal", 0.25, prior_std=0.5)
-    prior = toy.draw_sine_prior(signal, data, rng=np.random.default_rng(0))
+    prior = signal.initial_sample(data, None, rng=np.random.default_rng(0))
     draws = np.array(
         [
             signal.sample(
@@ -151,7 +138,7 @@ def test_sine_rejects_covariance_its_likelihood_cannot_use():
     noise = Covariance.like(
         data, {"A": np.ones(n), "E": np.ones(n), "AE": np.full(n, 0.5)}
     )
-    prior = toy.draw_sine_prior(signal, data, rng=np.random.default_rng(0))
+    prior = signal.initial_sample(data, None, rng=np.random.default_rng(0))
     with pytest.raises(ValueError, match="uncorrelated"):
         signal.sample(data, noise, prior, rng=np.random.default_rng(1))
 
@@ -267,7 +254,7 @@ def test_gb_eryn_restart_and_global_rng_isolation(gb_model_with_eryn):
     )
     short = gb.GBBlock(**settings, steps_per_cycle=2)
     long = gb.GBBlock(**settings, steps_per_cycle=4)
-    prior = gb.draw_gb_prior(short, data, noise, rng=np.random.default_rng(2))
+    prior = short.initial_sample(data, noise, rng=np.random.default_rng(2))
     initial_internal_state = deepcopy(short.state)
     prior_copy = deepcopy(prior.template)
     long.state = deepcopy(initial_internal_state)
@@ -307,7 +294,7 @@ def test_gb_recomputes_likelihood_for_changed_residual(gb_model_with_eryn):
         steps_per_cycle=3,
         band=4,
     )
-    prior = gb.draw_gb_prior(block, data, noise, rng=np.random.default_rng(4))
+    prior = block.initial_sample(data, noise, rng=np.random.default_rng(4))
     first = block.sample(data, noise, prior, rng=np.random.default_rng(5))
     internal_snapshot = deepcopy(block.state)
     changed = replace(data, channel_data={"A": 1e5 * data.channel_data["A"]})
@@ -325,18 +312,18 @@ def test_sine_requires_time_white_noise_on_the_data_grid():
     toy = load_example("toy_fit")
     data = toy.make_observed()
     block = toy.SineBlock("slow", 0.004)
-    prior = toy.draw_sine_prior(block, data, rng=np.random.default_rng(0))
+    prior = block.initial_sample(data, None, rng=np.random.default_rng(0))
     noise = white_covariance(data.to_frequency(), 1.0)
     with pytest.raises(ValueError, match="time-domain white noise on the data grid"):
         block.sample(data, noise, prior, rng=np.random.default_rng(1))
 
 
-def test_white_noise_prior_requires_time_data():
+def test_white_noise_start_requires_time_data():
     toy = load_example("toy_fit")
     block = toy.WhiteNoiseBlock("noise")
     with pytest.raises(ValueError, match="time-domain"):
-        toy.draw_white_noise_prior(
-            block, toy.make_observed().to_frequency(), rng=np.random.default_rng(0)
+        block.initial_sample(
+            toy.make_observed().to_frequency(), None, rng=np.random.default_rng(0)
         )
 
 

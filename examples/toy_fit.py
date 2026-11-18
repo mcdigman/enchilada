@@ -1,12 +1,13 @@
 """Two conjugate Gibbs source blocks plus sampled white noise.
 
 Blocks retain fixed model configuration. Wheel owns the current parameters,
-BlockState snapshots, covariance, and sampling random stream. Caller-side helpers draw
-complete initial results using a separate RNG; an on_cycle_complete callback collects
-posterior chains outside the blocks. These blocks request time-domain inputs;
-Wheel also runs them on Fourier or WDM observations with data_domain="time",
-because the noise block publishes its covariance on that time grid. Their
-likelihood requires time-domain noise with independent channels.
+BlockState snapshots, covariance, and sampling random stream. Each block draws
+its own start from its prior in initial_sample, with the RNG Wheel passes at
+registration; an on_cycle_complete callback collects posterior chains outside
+the blocks. These blocks request time-domain inputs; Wheel also runs them on
+Fourier or WDM observations with data_domain="time", because the noise block
+publishes its covariance on that time grid. Their likelihood requires
+time-domain noise with independent channels.
 Run with:
 
     uv run --no-sync python examples/toy_fit.py
@@ -44,6 +45,18 @@ class SineBlock:
         return conditional_residual.block_state(
             {ch: amplitude * basis for ch in conditional_residual.channel_names},
             parameters={"amplitude": amplitude},
+        )
+
+    def initial_sample(
+        self,
+        conditional_residual: L1Data,
+        covariance: Covariance | None,
+        *,
+        rng: np.random.Generator,
+    ) -> BlockState:
+        """Draw the amplitude from its prior and render it on the time grid."""
+        return self._render(
+            conditional_residual, float(rng.normal(0.0, self.prior_std))
         )
 
     def sample(
@@ -106,6 +119,18 @@ class WhiteNoiseBlock:
             parameters={"sigma": float(np.sqrt(variance))},
         )
 
+    def initial_sample(
+        self,
+        conditional_residual: L1Data,
+        covariance: Covariance | None,
+        *,
+        rng: np.random.Generator,
+    ) -> BlockState:
+        """Draw the variance from its inverse-gamma prior and publish it."""
+        return self._render(
+            conditional_residual, float(self.scale / rng.gamma(self.shape))
+        )
+
     def sample(
         self,
         conditional_residual: L1Data,
@@ -124,20 +149,6 @@ class WhiteNoiseBlock:
         shape = self.shape + 0.5 * n_total
         scale = self.scale + 0.5 * ssr
         return self._render(conditional_residual, float(scale / rng.gamma(shape)))
-
-
-def draw_sine_prior(
-    block: SineBlock, reference_data: L1Data, *, rng: np.random.Generator
-) -> BlockState:
-    """Caller-side prior draw on the time grid requested by this model."""
-    return block._render(reference_data, float(rng.normal(0.0, block.prior_std)))
-
-
-def draw_white_noise_prior(
-    block: WhiteNoiseBlock, reference_data: L1Data, *, rng: np.random.Generator
-) -> BlockState:
-    """Prepare a complete initial noise result before registering the block."""
-    return block._render(reference_data, float(block.scale / rng.gamma(block.shape)))
 
 
 TRUTH = {"slow": 3.0, "fast": 2.0, "sigma": 0.5}
@@ -167,28 +178,13 @@ def run_toy_fit(n_cycles: int = 300, burn_in: int = 100, seed: int = 0):
     if not 0 <= burn_in < n_cycles:
         raise ValueError("burn_in must be nonnegative and smaller than n_cycles")
     observed = make_observed(seed)
-    # Distinct child streams keep initialization and sampling reproducible
-    # without replaying each other's draws or the observation-noise stream.
-    initialization_seed, sampling_seed = np.random.SeedSequence(seed).spawn(2)
-    initialization_rng = np.random.default_rng(initialization_seed)
-    wheel = Wheel(observed, random_seed=int(sampling_seed.generate_state(1)[0]))
+    # A child stream keeps the campaign (prior draws at registration, then
+    # sampling) from replaying the observation-noise draws.
+    campaign_seed = np.random.SeedSequence(seed).spawn(1)[0]
+    wheel = Wheel(observed, random_seed=int(campaign_seed.generate_state(1)[0]))
     for name, frequency in (("slow", 0.004), ("fast", 0.011)):
-        block = SineBlock(name=name, freq=frequency)
-        wheel.add(
-            block,
-            initial_block_state=draw_sine_prior(
-                block, observed, rng=initialization_rng
-            ),
-            data_domain="time",
-        )
-    noise = WhiteNoiseBlock(name="noise")
-    wheel.add(
-        noise,
-        initial_block_state=draw_white_noise_prior(
-            noise, observed, rng=initialization_rng
-        ),
-        data_domain="time",
-    )
+        wheel.add(SineBlock(name=name, freq=frequency), data_domain="time")
+    wheel.add(WhiteNoiseBlock(name="noise"), data_domain="time")
     chains: dict[str, list[float]] = {name: [] for name in ("slow", "fast", "noise")}
 
     def collect(cycle: int, w: Wheel) -> None:

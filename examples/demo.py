@@ -11,7 +11,7 @@ See examples/demo.ipynb for the same walkthrough with commentary.
 
 import numpy as np
 
-from enchilada import BlockState, L1Data, Wheel
+from enchilada import L1Data, Wheel
 from enchilada.testing import EchoBlock
 
 # One frozen object holds the TDI arrays and the run settings everyone
@@ -36,8 +36,8 @@ ucb = EchoBlock(name="ucb")
 mbhb = EchoBlock(name="mbhb")
 
 wheel = Wheel(observed, random_seed=0)
-wheel.add(ucb, initial_block_state=BlockState())
-wheel.add(mbhb, initial_block_state=BlockState())
+wheel.add(ucb)
+wheel.add(mbhb)
 
 wheel.run(num_cycles=3)
 

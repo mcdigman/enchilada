@@ -119,10 +119,11 @@ def inject_gb(truth, angles, Tobs, dt, n_samples, channels, noise, NB=128, seed=
 class GBBlock:
     """One galactic binary with a uniform-box prior and Eryn stretch sampling.
 
-    The block owns its sampler continuation in ``self.state``. The caller-side
-    ``draw_gb_prior`` helper initializes all walkers before registration. Each call
-    rebuilds GBGPU and Eryn, restores numerical walker/RNG state, and evaluates
-    the conditional residual.
+    The block owns its sampler continuation in ``self.state``. ``initial_sample``
+    draws every walker from the uniform box, resets ``self.state`` and publishes
+    the first walker; Wheel calls it once at registration. Each call rebuilds
+    GBGPU and Eryn, restores numerical walker/RNG state, and evaluates the
+    conditional residual.
     ``BlockState.parameters`` and its signal describe the first current walker,
     a posterior draw after mixing. ``state.samples`` holds only this cycle's
     samples; collect a chain with the Wheel callback. ``state.updates``
@@ -131,11 +132,10 @@ class GBBlock:
     This CPU example uses one temperature and fixed ensemble splits. Adaptive
     moves or tempering would require carrying their additional evolving state.
 
-    Register with ``wheel.add(block, initial_block_state=initial,
-    data_domain="frequency")``. This narrowband likelihood requires a
-    frequency-domain covariance on the data grid with independent channels; it
-    reads each channel's bin variances and converts them to PSD units with
-    ``2 C / Tobs``.
+    Register with ``wheel.add(block, data_domain="frequency")``. This narrowband
+    likelihood requires a frequency-domain covariance on the data grid with
+    independent channels; it reads each channel's bin variances and converts
+    them to PSD units with ``2 C / Tobs``.
     """
 
     SUPPORTED_CHANNELS = ("A", "E")
@@ -248,6 +248,32 @@ class GBBlock:
             parameters=dict(zip(self.PARAMETER_NAMES, map(float, params), strict=True)),
         )
 
+    def initial_sample(
+        self,
+        conditional_residual: L1Data,
+        covariance: Covariance | None,
+        *,
+        rng: np.random.Generator,
+    ) -> BlockState:
+        """Initialize block-owned walkers and publish the first walker's signal.
+
+        Wheel calls this at registration with frequency-domain data and a
+        frequency-domain covariance on the data grid. It resets ``self.state``;
+        a fresh block instance belongs to each independent campaign.
+        """
+        gb, _ = self._context(conditional_residual, covariance)
+        bounds = np.asarray(self.bounds)
+        coords = rng.uniform(bounds[:, 0], bounds[:, 1], size=(1, self.nw, 1, 4))
+        # Eryn consumes RandomState tuples, not Generator.bit_generator.state.
+        random_state = np.random.RandomState(int(rng.integers(2**32))).get_state()
+        result = self._render(gb, coords[0, 0, 0], conditional_residual)
+        self.state = self.State(
+            coords={"model_0": coords},
+            inds={"model_0": np.ones((1, self.nw, 1), dtype=bool)},
+            random_state=random_state,
+        )
+        return result
+
     def sample(
         self,
         conditional_residual: L1Data,
@@ -304,7 +330,7 @@ class GBBlock:
         current_state = self.state
         if current_state.random_state is None or not current_state.coords:
             raise ValueError(
-                "Initialize GBBlock.state with draw_gb_prior or a checkpoint"
+                "Initialize GBBlock.state with initial_sample or a checkpoint"
             )
         sampler.random_state = current_state.random_state
         # Deliberately omit cached log_like/log_prior: another block may have
@@ -329,32 +355,3 @@ class GBBlock:
             updates=current_state.updates + 1,
         )
         return result
-
-
-def draw_gb_prior(
-    block: GBBlock,
-    reference_data: L1Data,
-    covariance: Covariance | None,
-    *,
-    rng: np.random.Generator,
-) -> BlockState:
-    """Initialize block-owned walkers and return the initial physical publication.
-
-    Call this example helper with frequency-domain data and a frequency-domain
-    covariance on the data grid, using an initialization RNG separate from
-    Wheel's sampling RNG.
-    This resets ``block.state``. Wheel never calls the helper or draws initial
-    parameters itself. A fresh block instance belongs to each independent campaign.
-    """
-    gb, _ = block._context(reference_data, covariance)
-    bounds = np.asarray(block.bounds)
-    coords = rng.uniform(bounds[:, 0], bounds[:, 1], size=(1, block.nw, 1, 4))
-    # Eryn consumes RandomState tuples, not Generator.bit_generator.state.
-    random_state = np.random.RandomState(int(rng.integers(2**32))).get_state()
-    result = block._render(gb, coords[0, 0, 0], reference_data)
-    block.state = block.State(
-        coords={"model_0": coords},
-        inds={"model_0": np.ones((1, block.nw, 1), dtype=bool)},
-        random_state=random_state,
-    )
-    return result
