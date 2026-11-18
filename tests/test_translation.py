@@ -1,18 +1,14 @@
 """Object conversion preserves physical grids, numerical values and owned state."""
 
-import importlib.util
 from dataclasses import replace
 
+import domania
 import numpy as np
 import pytest
 
 from conftest import white_covariance
 from enchilada import BlockState, L1Data, WDMGrid
 from enchilada.translation import transform
-
-requires_wdm = pytest.mark.skipif(
-    importlib.util.find_spec("wdm") is None, reason="local WDM backend is optional"
-)
 
 
 def observations(num_time_samples=64, sample_interval_s=0.25):
@@ -168,24 +164,50 @@ def test_conversion_checks_nonfinite_data_and_irrelevant_grid_options():
         transform(data, "frequency")
 
 
-@requires_wdm
+def test_transform_refuses_non_finite_output():
+    # Finite input passes the input check; dt * rfft overflows to inf.
+    data = observations(sample_interval_s=1e3)
+    assert data.sample_rate_hz == 1e-3
+    data = replace(
+        data,
+        channel_data={name: np.full(64, 1e308) for name in data.channel_names},
+    )
+    with (
+        np.errstate(over="ignore", invalid="ignore"),
+        pytest.raises(ValueError, match="non-finite coefficients"),
+    ):
+        transform(data, "frequency")
+
+
 @pytest.mark.parametrize("source_domain", ["time", "frequency"])
 @pytest.mark.parametrize("sample_interval_s", [0.125, 10.0])
-def test_actual_wdm_backend_and_all_round_trip_routes(source_domain, sample_interval_s):
-    import wdm
-
+def test_domania_wdm_coefficients_and_all_round_trip_routes(
+    source_domain, sample_interval_s
+):
     data = observations(sample_interval_s=sample_interval_s)
     source = transform(data, source_domain)
     converted = transform(source, "wdm", num_frequency_divisions=8)
-    assert converted.wdm_grid.num_frequency_divisions == 8
-    assert converted.wdm_grid.num_time_divisions == 8
-    for name in data.channel_names:
-        expected = wdm.forward_time(data.channel_data[name], 8, 8, sample_interval_s)
-        np.testing.assert_allclose(converted.channel_data[name], expected, atol=1e-14)
-        np.testing.assert_array_equal(
-            converted.channel_data[name][~converted.wdm_grid.active_mask], 0.0
+    assert converted.wdm_grid == WDMGrid(
+        num_frequency_divisions=8, num_time_divisions=8
+    )
+    stack = np.stack([data.channel_data[name] for name in data.channel_names])
+    expected_stack = domania.transform(
+        stack, "time", "wdm", N=64, dt=sample_interval_s, target_wdm=(8, 8)
+    )
+    for index, name in enumerate(data.channel_names):
+        expected = domania.wilson.forward_time(
+            data.channel_data[name], 8, 8, sample_interval_s
         )
+        np.testing.assert_array_equal(expected_stack[index], expected)
+        assert converted.channel_data[name].shape == (8, 8)
         assert converted.channel_data[name].dtype == np.float64
+        if source_domain == "time":
+            np.testing.assert_array_equal(converted.channel_data[name], expected)
+        else:
+            # (dt * rfft) / dt is exact only for power-of-two dt.
+            np.testing.assert_allclose(
+                converted.channel_data[name], expected, rtol=0, atol=1e-13
+            )
     for target in ("time", "frequency"):
         restored = transform(converted, target)
         expected = transform(data, target)
@@ -204,14 +226,13 @@ def test_actual_wdm_backend_and_all_round_trip_routes(source_domain, sample_inte
     )
 
 
-@requires_wdm
 def test_wdm_division_selectors_regrid_without_resampling():
     data = observations()
     first = transform(data, "wdm", num_frequency_divisions=8)
     same = transform(data, "wdm", num_time_divisions=8)
     regridded = transform(first, "wdm", num_time_divisions=4)
     direct = transform(data, "wdm", num_frequency_divisions=16)
-    assert regridded.channel_data["A"].shape == (17, 4)
+    assert regridded.channel_data["A"].shape == (16, 4)
     assert regridded.wdm_grid == WDMGrid(
         num_frequency_divisions=16, num_time_divisions=4
     )
@@ -241,17 +262,6 @@ def test_first_wdm_conversion_requires_a_valid_division_count():
         transform(observations(63), "wdm", num_time_divisions=8)
 
 
-def test_missing_wdm_backend_has_a_local_install_hint(monkeypatch):
-    import enchilada._transforms as backend
-
-    def unavailable(name):
-        raise ModuleNotFoundError("No module named 'wdm'", name="wdm")
-
-    monkeypatch.setattr(backend.importlib, "import_module", unavailable)
-    with pytest.raises(ImportError, match="local.*wdm|wdm.*local"):
-        transform(observations(), "wdm", num_time_divisions=8)
-
-
 def test_joint_wdm_result_converts_signal_with_a_wdm_reference():
     data = observations()
     grid = WDMGrid(num_frequency_divisions=8, num_time_divisions=8)
@@ -265,33 +275,54 @@ def test_joint_wdm_result_converts_signal_with_a_wdm_reference():
     assert not np.shares_memory(converted.template["A"], result.template["A"])
 
 
-def test_backend_dependency_failure_is_not_reported_as_missing_wdm(monkeypatch):
-    import enchilada._transforms as backend
+def test_wdm_conversions_reach_domania_only_after_the_grid_checks(monkeypatch):
+    import enchilada._transforms as transforms
 
-    def unavailable_dependency(name):
-        raise ModuleNotFoundError("No module named 'scipy'", name="scipy")
+    calls = []
 
-    monkeypatch.setattr(backend.sys, "version_info", (3, 13))
-    monkeypatch.setattr(backend.importlib, "import_module", unavailable_dependency)
-    with pytest.raises(ModuleNotFoundError, match="scipy"):
-        transform(observations(), "wdm", num_time_divisions=8)
+    def recording(stacked, source_domain, target_domain, **options):
+        calls.append((stacked.shape, source_domain, target_domain, options))
+        return np.zeros((stacked.shape[0], 8, 8))
+
+    monkeypatch.setattr(transforms, "_wdm_transform", recording)
+    data = observations()
+    with pytest.raises(ValueError, match="WDM target requires wdm_grid"):
+        transforms.transform_channels(
+            data.channel_data,
+            source_domain="time",
+            target_domain="wdm",
+            num_time_samples=64,
+            sample_rate_hz=4.0,
+        )
+    with pytest.raises(ValueError, match="WDM source requires wdm_grid"):
+        transforms.transform_channels(
+            {"A": np.zeros((8, 8))},
+            source_domain="wdm",
+            target_domain="time",
+            num_time_samples=64,
+            sample_rate_hz=4.0,
+        )
+    assert calls == []
+    converted = transform(data, "wdm", num_frequency_divisions=8)
+    grid = WDMGrid(num_frequency_divisions=8, num_time_divisions=8)
+    assert converted.wdm_grid == grid
+    assert calls == [
+        (
+            (2, 64),
+            "time",
+            "wdm",
+            {
+                "num_time_samples": 64,
+                "sample_interval_s": 0.25,
+                "source_wdm_grid": None,
+                "target_wdm_grid": grid,
+            },
+        )
+    ]
 
 
-def test_unrelated_wdm_package_and_unsupported_python_have_clear_errors(monkeypatch):
-    import enchilada._transforms as backend
-
-    monkeypatch.setattr(backend.sys, "version_info", (3, 13))
-    monkeypatch.setattr(backend.importlib, "import_module", lambda name: object())
-    with pytest.raises(ImportError, match="not the expected LISA"):
-        transform(observations(), "wdm", num_time_divisions=8)
-    monkeypatch.setattr(backend.sys, "version_info", (3, 12))
-    with pytest.raises(ImportError, match="Python >=3.13"):
-        transform(observations(), "wdm", num_time_divisions=8)
-
-
-@requires_wdm
 def test_white_noise_wdm_coefficient_variance_matches_white_covariance():
-    """E[w^2] == sigma^2 / fs at every active pixel for white noise of variance
+    """E[w^2] == sigma^2 / fs at every folded cell for white noise of variance
     sigma^2 per sample: the WDM constant used by white_covariance."""
     fs, n, sigma = 0.2, 1 << 12, 0.7
     rng = np.random.default_rng(3)
@@ -310,10 +341,8 @@ def test_white_noise_wdm_coefficient_variance_matches_white_covariance():
         acc = power if acc is None else acc + power
     measured = acc / trials
     predicted = white_covariance(wdm, sigma**2).A
-    active = wdm.wdm_grid.active_mask
-    np.testing.assert_array_equal(predicted[~active], 0.0)
-    interior = active.copy()
-    interior[:2] = False  # the edge bands carry the window's half-band
-    interior[-2:] = False
-    ratio = float(np.mean(measured[interior] / predicted[interior]))
+    np.testing.assert_array_equal(predicted, sigma**2 / fs)
+    ratio = float(np.mean(measured / predicted))
     assert ratio == pytest.approx(1.0, abs=0.05)
+    row_zero = float(np.mean(measured[0] / predicted[0]))  # DC and Nyquist slots
+    assert row_zero == pytest.approx(1.0, abs=0.1)

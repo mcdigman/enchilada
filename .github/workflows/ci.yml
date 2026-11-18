@@ -33,6 +33,8 @@ jobs:
         # --locked fails fast if uv.lock has drifted from pyproject.toml, so CI
         # never passes against a resolution contributors do not get locally
         run: uv sync --locked --extra numeric-orbits --extra mojito
+      - name: Notebook tests need matplotlib (it arrives with lisaorbits)
+        run: uv run --no-sync python -c "import matplotlib"
       - name: Lint
         run: uv run --no-sync ruff check src tests examples benchmarks
       - name: Format
@@ -56,9 +58,10 @@ jobs:
           print('py.typed present in installed wheel')
           "
 
-  # The core is numpy-only by design. Prove that on every supported interpreter,
-  # including 3.14 (which the LISA dev stack runs) where the optional
-  # numeric-orbits deps may not have wheels yet -- those tests soft-skip.
+  # The core is numpy, scipy and domania. Prove it imports and tests on every
+  # supported interpreter, including 3.14 (which the LISA dev stack runs); the
+  # HDF5-loader, lisaorbits-loader, Mojito and translation-notebook tests skip
+  # without h5py, lisaorbits and matplotlib.
   core-only:
     runs-on: ubuntu-latest
     strategy:
@@ -75,11 +78,11 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install core only (no extras)
         run: uv sync --no-extra numeric-orbits
-      - name: Test (no coverage gate -- orbit tests skip without scipy)
+      - name: Test (no coverage gate -- HDF5, lisaorbits, Mojito and notebook tests skip)
         run: uv run --no-sync pytest -q
 
-  # Resolve only the core dependencies: uv sync resolves all optional extras
-  # into its lockfile, where lisaorbits would raise the NumPy minimum.
+  # Install the core at its declared floors without the extras: uv sync would
+  # resolve them too and let lisaorbits raise the floors.
   core-minimum:
     runs-on: ubuntu-latest
     steps:
@@ -90,20 +93,26 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
           python-version: "3.12"
-      - name: Install the core at its NumPy floor
+      - name: Install the core at its dependency floors
         run: |
           uv venv --python 3.12
-          uv pip install --only-binary numpy --group dev -e . "numpy==1.26.4"
+          uv pip install --only-binary numpy --only-binary scipy --group dev -e . "numpy==2.1.0" "scipy==1.14.1" "domania==3.0.0"
       - name: Verify the tested dependency boundary
         run: |
           uv run --no-sync python - <<'PY'
           import importlib.util
-          import numpy
 
-          assert numpy.__version__ == "1.26.4", numpy.__version__
-          for name in ("scipy", "h5py", "lisaorbits", "wdm"):
+          import domania
+          import numpy
+          import scipy
+
+          assert numpy.__version__ == "2.1.0", numpy.__version__
+          assert scipy.__version__ == "1.14.1", scipy.__version__
+          assert domania.__version__ == "3.0.0", domania.__version__
+          for name in ("h5py", "lisaorbits"):
               assert importlib.util.find_spec(name) is None, name
-          print("core minimum: NumPy", numpy.__version__)
+          print("core minimum: NumPy", numpy.__version__, "SciPy", scipy.__version__,
+                "domania", domania.__version__)
           PY
       - name: Test the core minimum
         run: uv run --no-sync pytest -q
@@ -124,11 +133,6 @@ jobs:
       - name: Test the resolved minimum versions
         # A plain uv run would re-resolve using the default highest strategy.
         run: uv run --no-sync pytest -q
-
-  wdm:
-    uses: $/.github/workflows/wdm.yml
-    secrets:
-      WDM_DEPLOY_KEY: ${{ secrets.WDM_DEPLOY_KEY }}
 
   # The sdist claims to be self-testing (source-include ships tests/ and
   # examples/). Downstream packagers build from it, so prove the claim: unpack

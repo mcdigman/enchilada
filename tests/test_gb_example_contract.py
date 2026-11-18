@@ -130,8 +130,6 @@ def test_gb_context_requires_independent_channels_and_returns_psd_units(gb_model
 def test_gb_frequency_registration_reads_its_native_frequency_covariance(
     gb_model, spectral_context, storage_domain
 ):
-    if storage_domain == "wdm":
-        pytest.importorskip("wdm")
     data, noise = spectral_context
     options = {"num_frequency_divisions": 8} if storage_domain == "wdm" else {}
     observed = transform(data, storage_domain, **options)

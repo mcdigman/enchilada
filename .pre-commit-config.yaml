@@ -41,5 +41,3 @@ repos:
   rev: v1.7.12
   hooks:
   - id: actionlint
-    # remove ignore once actionlint recognizes this syntax
-    args: ['-ignore', 'reusable workflow call "\$/.+" at "uses" is not following the format']

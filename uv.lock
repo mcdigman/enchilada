@@ -737,11 +737,26 @@ wheels = [
 ]
 
 [[package]]
+name = "domania"
+version = "3.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "scipy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a6/5e/be475832e4c3a3de3799f0c0bdaca42dfe7baa8ed9b7e453f16ec43091ab/domania-3.0.0.tar.gz", hash = "sha256:8f10da535f37d1aaa01a6438eb1634a1d2c2c8e68b572fd7d60204a04dbf18aa", size = 2049144, upload-time = "2026-11-16T17:26:11.488Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/71/98/fad89df1f69afa8b88cda57d5664254920af2b629fbeda3584445e9b2944/domania-3.0.0-py3-none-any.whl", hash = "sha256:20c670108a685bf11755ad16a0e1ebf75e93541b28be1a48127d0fa8598c944f", size = 62816, upload-time = "2026-11-16T17:26:09.823Z" },
+]
+
+[[package]]
 name = "enchilada"
 version = "0.4.0"
 source = { editable = "." }
 dependencies = [
+    { name = "domania" },
     { name = "numpy" },
+    { name = "scipy" },
 ]
 
 [package.optional-dependencies]
@@ -750,12 +765,10 @@ examples = [
 ]
 mojito = [
     { name = "h5py" },
-    { name = "scipy" },
 ]
 numeric-orbits = [
     { name = "h5py" },
     { name = "lisaorbits" },
-    { name = "scipy" },
 ]
 
 [package.dev-dependencies]
@@ -768,13 +781,13 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "h5py", marker = "extra == 'mojito'", specifier = ">=3.0" },
-    { name = "h5py", marker = "extra == 'numeric-orbits'", specifier = ">=3.0" },
+    { name = "domania", specifier = ">=3.0,<4" },
+    { name = "h5py", marker = "extra == 'mojito'", specifier = ">=3.12.1" },
+    { name = "h5py", marker = "extra == 'numeric-orbits'", specifier = ">=3.12.1" },
     { name = "jupyterlab", marker = "extra == 'examples'", specifier = ">=4" },
     { name = "lisaorbits", marker = "extra == 'numeric-orbits'", specifier = ">=3.0.3" },
-    { name = "numpy", specifier = ">=1.26.4" },
-    { name = "scipy", marker = "extra == 'mojito'", specifier = ">=1.8" },
-    { name = "scipy", marker = "extra == 'numeric-orbits'", specifier = ">=1.8" },
+    { name = "numpy", specifier = ">=2.1" },
+    { name = "scipy", specifier = ">=1.14.1" },
 ]
 provides-extras = ["numeric-orbits", "mojito", "examples"]
 

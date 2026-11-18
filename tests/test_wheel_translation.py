@@ -4,7 +4,6 @@ A covariance stays on the grid its owner published it on. A block registered
 on that grid receives it; a block on another grid is refused at run.
 """
 
-import importlib.util
 from dataclasses import dataclass, replace
 
 import numpy as np
@@ -13,10 +12,6 @@ import pytest
 from conftest import white_covariance
 from enchilada import BlockState, Covariance, L1Data, WDMGrid, Wheel, transform
 from enchilada.testing import EchoBlock
-
-requires_wdm = pytest.mark.skipif(
-    importlib.util.find_spec("wdm") is None, reason="local WDM backend is optional"
-)
 
 
 def observations():
@@ -33,7 +28,7 @@ def observations():
 def block_reference(data, domain):
     """An L1Data on the block's grid and the matching Wheel.add options.
 
-    Built by hand, so no test here needs the WDM backend to build a covariance.
+    Built by hand, so no test here needs a WDM transform to build a covariance.
     """
     if domain == "frequency":
         return data.to_frequency(), {}
@@ -86,12 +81,8 @@ class ConstantSignal:
         return self._render(conditional_residual)
 
 
-@pytest.mark.parametrize(
-    "canonical_domain", ["time", "frequency", pytest.param("wdm", marks=requires_wdm)]
-)
-@pytest.mark.parametrize(
-    "third_domain", ["frequency", pytest.param("wdm", marks=requires_wdm)]
-)
+@pytest.mark.parametrize("canonical_domain", ["time", "frequency", "wdm"])
+@pytest.mark.parametrize("third_domain", ["frequency", "wdm"])
 def test_mixed_blocks_receive_matching_inputs_and_return_canonical_states(
     canonical_domain, third_domain
 ):
@@ -123,7 +114,6 @@ def test_mixed_blocks_receive_matching_inputs_and_return_canonical_states(
         assert wheel.contribution(name)["A"].shape == canonical.channel_data["A"].shape
 
 
-@requires_wdm
 def test_wdm_noise_publication_is_held_on_the_wdm_grid():
     class PixelNoise:
         name = "noise"
@@ -136,8 +126,8 @@ def test_wdm_noise_publication_is_held_on_the_wdm_grid():
     data = observations()
     wdm_data = transform(data, "wdm", num_frequency_divisions=8)
     grid = wdm_data.wdm_grid
-    variances = np.where(grid.active_mask, 1.0, 0.0)
-    variances[1:-1] *= np.arange(1, grid.num_frequency_divisions)[:, None]
+    variances = np.ones(grid.array_shape)
+    variances[1:] *= np.arange(1, grid.num_frequency_divisions)[:, None]
     initial = BlockState(
         covariance=Covariance.like(
             wdm_data, {name: variances for name in data.channel_names}
@@ -220,17 +210,17 @@ def test_invalid_domain_selection_does_not_register_or_sample():
     assert len(wheel.ledger) == 0
 
 
-def test_initial_wdm_signal_must_match_selected_grid_before_backend(monkeypatch):
-    def unexpected_backend():
-        raise AssertionError("invalid initial WDM grid reached the optional backend")
+def test_initial_wdm_signal_must_match_selected_grid_before_the_transform(monkeypatch):
+    def unexpected_transform(*args, **kwargs):
+        raise AssertionError("an invalid initial WDM grid reached domania")
 
-    monkeypatch.setattr("enchilada._transforms._load_wdm", unexpected_backend)
+    monkeypatch.setattr("enchilada._transforms._wdm_transform", unexpected_transform)
     data = observations()
     wheel = Wheel(data)
     # Both grids represent 64 samples, but selected (Nf, Nt) = (4, 16)
-    # requires shape (5, 16), not the (9, 8) coefficients of an (8, 8) grid.
+    # requires shape (4, 16), not the (8, 8) coefficients of an (8, 8) grid.
     initial = BlockState(
-        template={name: np.zeros((9, 8)) for name in data.channel_names}
+        template={name: np.zeros((8, 8)) for name in data.channel_names}
     )
     with pytest.raises(ValueError, match="shape"):
         wheel.add(
@@ -249,7 +239,7 @@ def test_initial_wdm_signal_must_match_selected_grid_before_backend(monkeypatch)
 
 def test_wheel_rejects_mutated_wdm_buffers_with_same_time_sample_count():
     data = L1Data(
-        {name: np.zeros((5, 16)) for name in ("A", "E")},
+        {name: np.zeros((4, 16)) for name in ("A", "E")},
         sample_rate_hz=0.4,
         tdi_generation="2.0",
         physical_observable="fractional_frequency",
@@ -257,7 +247,7 @@ def test_wheel_rejects_mutated_wdm_buffers_with_same_time_sample_count():
     )
     original_grid = data.wdm_grid
     for name in data.channel_names:
-        data.channel_data[name] = np.zeros((9, 8))
+        data.channel_data[name] = np.zeros((8, 8))
     with pytest.raises(ValueError, match="shape"):
         Wheel(data)
     assert data.wdm_grid is original_grid
@@ -306,11 +296,11 @@ def test_block_on_another_grid_than_the_covariance_is_refused_at_run():
     np.testing.assert_array_equal(wheel.covariance.A, 0.25)
 
 
-def test_wdm_block_on_a_time_covariance_is_refused_before_the_backend(monkeypatch):
-    def unexpected_backend():
+def test_wdm_block_on_a_time_covariance_is_refused_before_the_transform(monkeypatch):
+    def unexpected_transform(*args, **kwargs):
         raise AssertionError("the grid check must come before any WDM transform")
 
-    monkeypatch.setattr("enchilada._transforms._load_wdm", unexpected_backend)
+    monkeypatch.setattr("enchilada._transforms._wdm_transform", unexpected_transform)
     data = observations()
     wheel = Wheel(data, white_covariance(data, 1.0))
     wheel.add(
@@ -456,7 +446,7 @@ def test_noise_only_seed_on_the_block_grid_is_adopted_there(domain):
     """A seed covariance is on the block's grid; the Wheel keeps it there."""
     data = observations()
     reference, options = block_reference(data, domain)
-    variances = np.where(reference.grid.active_mask, 1.0, 0.0)
+    variances = np.ones(reference.grid.channel_shape)
     seed = BlockState(
         covariance=Covariance.like(
             reference, {name: variances for name in data.channel_names}

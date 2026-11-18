@@ -1,4 +1,4 @@
-"""Representation metadata independent of any optional transform backend."""
+"""Representation metadata: domains, the WDM grid and the checks on its arrays."""
 
 import numbers
 from dataclasses import dataclass
@@ -24,10 +24,13 @@ def _positive_even_integer(value: int, name: str) -> int:
 class WDMGrid:
     """The WDM frequency and time divisions of an unchanged observation.
 
-    Both division counts are positive even integers. The coefficient array has
-    ``num_frequency_divisions + 1`` rows, including both edge bands. The two
-    edge bands contain coefficients only at even time indices; every interior
-    coefficient is active. Sampling interval and epoch belong to ``L1Data``.
+    Both division counts are positive even integers. A coefficient array has
+    shape ``(num_frequency_divisions, num_time_divisions)`` in domania's folded
+    layout, and every cell carries data: slot ``(i, j)`` with ``i >= 1`` is
+    band ``i`` at time ``j``; row 0 holds band 0 (DC) at time ``j`` in its even
+    slots and band ``num_frequency_divisions`` (Nyquist) at time ``j - 1`` in
+    its odd slots (``domania.wilson.grid.cells`` lists each slot's band and
+    time). Sampling interval and epoch belong to ``L1Data``.
     """
 
     num_frequency_divisions: int
@@ -41,20 +44,13 @@ class WDMGrid:
 
     @property
     def array_shape(self) -> tuple[int, int]:
-        """Frequency rows, including both edges, followed by time columns."""
-        return self.num_frequency_divisions + 1, self.num_time_divisions
+        """Frequency rows followed by time columns: ``(Nf, Nt)``."""
+        return self.num_frequency_divisions, self.num_time_divisions
 
     @property
     def num_time_samples(self) -> int:
         """Number of samples in the underlying real time series."""
         return self.num_frequency_divisions * self.num_time_divisions
-
-    @property
-    def active_mask(self) -> np.ndarray:
-        """Return an independent mask of the grid's physical coefficients."""
-        active = np.ones(self.array_shape, dtype=bool)
-        active[[0, -1], 1::2] = False
-        return active
 
 
 @dataclass(frozen=True)
@@ -117,13 +113,6 @@ class Grid:
             return (self.num_time_samples // 2 + 1,)
         assert self.wdm_grid is not None
         return self.wdm_grid.array_shape
-
-    @property
-    def active_mask(self) -> np.ndarray:
-        """Independent boolean mask of the points that carry data."""
-        if self.wdm_grid is None:
-            return np.ones(self.channel_shape, dtype=bool)
-        return self.wdm_grid.active_mask
 
     @property
     def observation_duration_s(self) -> float:
@@ -194,14 +183,12 @@ def check_wdm_coefficients(
     wdm_grid: WDMGrid,
     context_label: str,
 ) -> None:
-    """Require real coefficient grids with exactly zero inactive entries.
+    """Require real floating coefficient arrays of the grid's folded shape.
 
-    The WDM inverse discards inactive coefficients. Reject them here rather
-    than silently losing caller data. The translator zeros its own numerical
-    inactive tails before constructing an ``L1Data``. Active-value finiteness
-    remains the responsibility of the Wheel and transform boundaries.
+    The inverse transform reads every cell, so there is no structural zero to
+    enforce. Finiteness remains the responsibility of the Wheel and transform
+    boundaries.
     """
-    inactive = ~wdm_grid.active_mask
     for channel_name, coefficients in channel_data.items():
         label = f"{context_label}[{channel_name!r}]"
         if not isinstance(coefficients, np.ndarray):
@@ -213,5 +200,3 @@ def check_wdm_coefficients(
             )
         if not np.issubdtype(coefficients.dtype, np.floating):
             raise TypeError(f"{label} WDM coefficients must be real floating values")
-        if np.any(coefficients[inactive] != 0):
-            raise ValueError(f"{label} inactive WDM coefficients must be exactly zero")

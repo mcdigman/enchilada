@@ -1,6 +1,5 @@
 """Explicit block starts bypass prior draws and use normal atomic adoption."""
 
-import importlib.util
 import warnings
 from copy import deepcopy
 from dataclasses import dataclass, replace
@@ -20,10 +19,6 @@ from enchilada import (
     transform,
 )
 from enchilada.testing import check_block
-
-requires_wdm = pytest.mark.skipif(
-    importlib.util.find_spec("wdm") is None, reason="local WDM backend is optional"
-)
 
 
 @pytest.fixture
@@ -118,8 +113,8 @@ def test_registration_does_not_access_model_initialization(observed):
         ("time", None),
         ("frequency", "time"),
         ("time", "frequency"),
-        pytest.param("time", "wdm", marks=requires_wdm),
-        pytest.param("wdm", "wdm", marks=requires_wdm),
+        ("time", "wdm"),
+        ("wdm", "wdm"),
     ],
 )
 def test_seed_skips_prior_and_round_trips_through_selected_domain(
@@ -235,15 +230,18 @@ def test_invalid_seed_leaves_registration_and_rng_unchanged(
 
 
 def test_failed_seed_translation_does_not_register_block(observed, monkeypatch):
-    def unavailable_backend():
-        raise ImportError("test WDM backend unavailable")
+    """An error raised by the WDM transform propagates and leaves the campaign
+    untouched."""
 
-    monkeypatch.setattr("enchilada._transforms._load_wdm", unavailable_backend)
+    def failing_transform(*args, **kwargs):
+        raise RuntimeError("test WDM transform failure")
+
+    monkeypatch.setattr("enchilada._transforms._wdm_transform", failing_transform)
     grid = WDMGrid(num_frequency_divisions=8, num_time_divisions=8)
     initial = BlockState(template={"A": np.zeros(grid.array_shape)})
     wheel = Wheel(observed, random_seed=7)
     rng_before = deepcopy(wheel._rng.bit_generator.state)
-    with pytest.raises(ImportError, match="test WDM backend unavailable"):
+    with pytest.raises(RuntimeError, match="test WDM transform failure"):
         wheel.add(
             SeededBlock(),
             initial_block_state=initial,

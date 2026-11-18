@@ -1,4 +1,4 @@
-"""WDM grids describe the real, active degrees of freedom without a backend."""
+"""WDM grids describe domania's folded coefficient layout without a transform."""
 
 from dataclasses import FrozenInstanceError
 
@@ -14,7 +14,7 @@ def test_wdm_grid_is_keyword_only_and_immutable():
     grid = WDMGrid(num_frequency_divisions=4, num_time_divisions=8)
     with pytest.raises(FrozenInstanceError):
         grid.num_frequency_divisions = 8
-    assert grid.array_shape == (5, 8)
+    assert grid.array_shape == (4, 8)
     assert grid.num_time_samples == 32
 
 
@@ -28,19 +28,16 @@ def test_wdm_grid_rejects_invalid_divisions(name, value):
         WDMGrid(**arguments)
 
 
-def test_numpy_integer_grid_counts_and_independent_active_masks():
-    from enchilada.domains import WDMGrid
+def test_numpy_integer_grid_counts_are_normalised_and_every_cell_is_data():
+    from enchilada.domains import Grid, WDMGrid
 
     grid = WDMGrid(num_frequency_divisions=np.int64(4), num_time_divisions=np.int32(8))
-    mask = grid.active_mask
-    assert mask.dtype == bool
-    assert mask.shape == (5, 8)
-    assert int(mask.sum()) == 32
-    np.testing.assert_array_equal(mask[1:-1], True)
-    np.testing.assert_array_equal(mask[[0, -1], ::2], True)
-    np.testing.assert_array_equal(mask[[0, -1], 1::2], False)
-    mask[:] = False
-    assert int(grid.active_mask.sum()) == 32
+    assert type(grid.num_frequency_divisions) is int
+    assert type(grid.num_time_divisions) is int
+    assert grid.array_shape == (4, 8)
+    assert int(np.prod(grid.array_shape)) == grid.num_time_samples
+    assert not hasattr(grid, "active_mask")
+    assert not hasattr(Grid("wdm", 32, 1.0, grid), "active_mask")
 
 
 @pytest.mark.parametrize(
@@ -84,43 +81,44 @@ def test_resolve_wdm_grid_rejects_ambiguous_or_incompatible_counts(
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
-def test_wdm_coefficients_keep_active_values_and_input_buffers(dtype):
+def test_wdm_coefficients_keep_values_and_input_buffers(dtype):
     from enchilada.domains import WDMGrid, check_wdm_coefficients
 
     grid = WDMGrid(num_frequency_divisions=4, num_time_divisions=8)
-    coefficients = np.zeros(grid.array_shape, dtype=dtype)
-    coefficients[grid.active_mask] = np.arange(grid.num_time_samples)
+    coefficients = np.arange(grid.num_time_samples, dtype=dtype).reshape(
+        grid.array_shape
+    )
     original = coefficients.copy()
     check_wdm_coefficients({"A": coefficients}, grid, "data")
     np.testing.assert_array_equal(coefficients, original)
 
 
+def test_row_zero_odd_slots_carry_nyquist_data_and_are_accepted():
+    """In the folded layout row 0 interleaves DC (even slots) with Nyquist (odd
+    slots); there is no structural zero to enforce."""
+    from enchilada.domains import WDMGrid, check_wdm_coefficients
+
+    grid = WDMGrid(num_frequency_divisions=4, num_time_divisions=8)
+    coefficients = np.zeros(grid.array_shape)
+    coefficients[0, 1::2] = np.nextafter(0.0, 1.0)
+    check_wdm_coefficients({"A": coefficients}, grid, "data")
+
+
 @pytest.mark.parametrize(
     "coefficients,error,match",
     [
-        (np.zeros((4, 8)), ValueError, "shape"),
-        (np.zeros(40), ValueError, "shape"),
-        (np.zeros((5, 8), complex), TypeError, "real"),
-        (np.zeros((5, 8), int), TypeError, "floating"),
-        (np.ones((5, 8)), ValueError, "inactive"),
+        (np.zeros((5, 8)), ValueError, "shape"),
+        (np.zeros((4, 7)), ValueError, "shape"),
+        (np.zeros((2, 16)), ValueError, "shape"),  # well formed, but not this grid
+        (np.zeros(32), ValueError, "shape"),
+        (np.zeros((4, 8), complex), TypeError, "real"),
+        (np.zeros((4, 8), int), TypeError, "floating"),
+        ([[0.0] * 8] * 4, TypeError, "numpy array"),
     ],
 )
-def test_wdm_coefficients_reject_data_that_cannot_round_trip(
-    coefficients, error, match
-):
+def test_wdm_coefficients_reject_data_off_the_grid(coefficients, error, match):
     from enchilada.domains import WDMGrid, check_wdm_coefficients
 
     grid = WDMGrid(num_frequency_divisions=4, num_time_divisions=8)
     with pytest.raises(error, match=match):
         check_wdm_coefficients({"A": coefficients}, grid, "data")
-
-
-def test_wdm_coefficients_reject_even_tiny_inactive_values_without_projection():
-    from enchilada.domains import WDMGrid, check_wdm_coefficients
-
-    grid = WDMGrid(num_frequency_divisions=4, num_time_divisions=8)
-    coefficients = np.zeros(grid.array_shape)
-    coefficients[0, 1] = np.nextafter(0.0, 1.0)
-    with pytest.raises(ValueError, match="inactive"):
-        check_wdm_coefficients({"A": coefficients}, grid, "data")
-    assert coefficients[0, 1] != 0.0

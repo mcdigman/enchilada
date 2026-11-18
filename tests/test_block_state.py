@@ -9,7 +9,7 @@ from conftest import make_observed, white_covariance
 from enchilada import BlockState, Wheel
 
 
-def test_wdm_result_factory_accepts_active_signal_and_zero_factory_matches_grid(
+def test_wdm_result_factory_accepts_a_full_grid_and_zero_factory_matches_grid(
     observed,
 ):
     from enchilada.domains import WDMGrid
@@ -20,7 +20,7 @@ def test_wdm_result_factory_accepts_active_signal_and_zero_factory_matches_grid(
         data_domain="wdm",
         channel_data={ch: np.zeros(grid.array_shape) for ch in observed.channel_names},
     )
-    signal = {ch: grid.active_mask.astype(float) for ch in observed.channel_names}
+    signal = {ch: np.ones(grid.array_shape) for ch in observed.channel_names}
     result = observed.block_state(signal, parameters={"amplitude": 1})
     assert result.parameters == {"amplitude": 1}
     np.testing.assert_array_equal(result.template["A"], signal["A"])
@@ -30,7 +30,7 @@ def test_wdm_result_factory_accepts_active_signal_and_zero_factory_matches_grid(
     assert observed.block_state().template is None
 
 
-@pytest.mark.parametrize("invalid", ["shape", "complex", "inactive"])
+@pytest.mark.parametrize("invalid", ["shape", "complex"])
 def test_wdm_result_factory_rejects_incompatible_signal(observed, invalid):
     from enchilada.domains import WDMGrid
 
@@ -43,12 +43,10 @@ def test_wdm_result_factory_rejects_incompatible_signal(observed, invalid):
     signal = {ch: np.zeros(grid.array_shape) for ch in observed.channel_names}
     error = ValueError
     if invalid == "shape":
-        signal["A"] = np.zeros((5, 8))
-    elif invalid == "complex":
+        signal["A"] = np.zeros((8, 8))
+    else:
         signal["A"] = signal["A"].astype(complex)
         error = TypeError
-    else:
-        signal["A"][-1, 1] = 1e-30
     with pytest.raises(error, match="A"):
         observed.block_state(signal)
 

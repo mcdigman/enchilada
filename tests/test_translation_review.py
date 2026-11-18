@@ -1,6 +1,5 @@
 """Regression cases found while independently reviewing object translation."""
 
-import importlib.util
 from dataclasses import replace
 
 import numpy as np
@@ -20,7 +19,7 @@ def test_noise_only_wdm_state_translation_carries_its_covariance(observed):
         },
         data_domain="wdm",
     )
-    variances = np.where(grid.active_mask, 1.0, 0.0)
+    variances = np.ones(grid.array_shape)
     covariance = Covariance.like(
         wdm_reference, {name: variances for name in observed.channel_names}
     )
@@ -88,19 +87,7 @@ def test_same_grid_block_receives_the_covariance_without_transform(
     assert received == [2.0, 2.0]
 
 
-@pytest.mark.parametrize(
-    "canonical_domain",
-    [
-        "time",
-        pytest.param(
-            "wdm",
-            marks=pytest.mark.skipif(
-                importlib.util.find_spec("wdm") is None,
-                reason="local WDM backend is optional",
-            ),
-        ),
-    ],
-)
+@pytest.mark.parametrize("canonical_domain", ["time", "wdm"])
 def test_rejected_translated_output_rolls_back_mutated_inputs_and_rng(
     observed, canonical_domain
 ):

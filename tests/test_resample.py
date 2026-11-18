@@ -5,10 +5,8 @@ import math
 import numpy as np
 import pytest
 
-pytest.importorskip("scipy", reason="decimate needs scipy.signal")
-
-from enchilada import L1Data, decimate  # noqa: E402
-from enchilada.resample import anti_alias_taps, edge_samples  # noqa: E402
+from enchilada import L1Data, decimate
+from enchilada.resample import anti_alias_taps, edge_samples
 
 T0 = 97729889.327664  # Mojito's first L1 sample, TCB seconds after the LISA epoch
 FS = 4.0
@@ -88,7 +86,7 @@ def test_refuses_frequency_and_wdm_input():
     with pytest.raises(ValueError, match="time-domain"):
         decimate(data.to_frequency(), 2)
     wdm = L1Data(
-        {"A": np.zeros((5, 8))},
+        {"A": np.zeros((4, 8))},
         sample_rate_hz=FS,
         tdi_generation="2.0",
         physical_observable="fractional_frequency",

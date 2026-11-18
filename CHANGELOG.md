@@ -9,7 +9,7 @@ All notable changes to enchilada are documented here. The format follows
 ### Added
 
 - `Grid`: a frozen value (`data_domain`, `num_time_samples`, `sample_rate_hz`,
-  `wdm_grid`) with `channel_shape`, `active_mask`, `observation_duration_s` and
+  `wdm_grid`) with `channel_shape`, `observation_duration_s` and
   `same_record`; `L1Data.grid` returns the data's grid and `enchilada.domains`
   owns `DOMAINS`.
 - `enchilada.mojito.load_mojito_l1`: reads a DDPC Mojito L1 HDF5 file (TDI
@@ -21,16 +21,31 @@ All notable changes to enchilada are documented here. The format follows
   `L1Data` by an integer factor (Kaiser FIR, 120 dB, passband to 0.8 of the
   new Nyquist, zero-phase) keeping `start_time_gps`; `edge_samples` gives the
   transient length. Both functions are exported from `enchilada`.
-- Optional extra `mojito` (h5py, scipy) for loading data without lisaorbits.
+- `examples/mojito_wdm_wheel.py`: fits a Mojito window to a WDM grid
+  (`fit_window`), loads and decimates it, translates it to WDM and serves a
+  diagnostic block on that grid; the Wheel side of the Mojito story.
+- Optional extra `mojito` (h5py) for loading data without lisaorbits.
 
 ### Changed
 
+- **Breaking:** the core depends on `numpy>=2.1`, `scipy>=1.14.1` and
+  `domania>=3.0,<4`; every WDM conversion goes through domania. The WDM
+  coefficient layout is domania's folded `(num_frequency_divisions,
+  num_time_divisions)`, in which every cell carries data (row 0 interleaves the
+  DC and Nyquist bands); `WDMGrid.active_mask` and the inactive-zero rules on
+  coefficients and covariances are removed. The private `wdm` backend, its
+  Python >=3.13 requirement and the `wdm.yml` workflow are gone. The
+  `numeric-orbits` and `mojito` extras no longer carry scipy, so `decimate` and
+  `NumericOrbit`'s interpolation need no extra; both extras require
+  `h5py>=3.12.1`. WDM arrays in the old `(Nf + 1, Nt)` layout are refused
+  (`num_frequency_divisions must be a positive even integer, got <Nf + 1>`);
+  regenerate them with `transform` from time or frequency data.
 - `Covariance` stores one stacked `(K, K, *channel_shape)` Hermitian array,
   `blocks`, and carries its `grid`. `Covariance.like(data, pairs)` is the one
   classmethod and captures the data's grid and channel order; `pair`, the
   channel attributes and `in_basis` read it. Construction validates exact
-  Hermitian symmetry, realness per domain, positive variances, zero blocks at
-  inactive WDM pixels and positive definiteness with one batched Cholesky.
+  Hermitian symmetry, realness per domain, positive variances and positive
+  definiteness with one batched Cholesky.
   `copy()` revalidates; `deepcopy` and pickle restore without validating.
 - **Breaking:** the direct constructor is
   `Covariance(blocks, *, channel_names, grid)`; the `pairs` attribute and
@@ -62,8 +77,7 @@ All notable changes to enchilada are documented here. The format follows
   variances on the grid of the data it received and passes them to `like`.
   Migration:
   - `from_variance(data, sigma**2)` → `like` with `sigma**2` per time sample,
-    `N * dt**2 * sigma**2` per frequency bin or `dt * sigma**2` per active WDM
-    pixel.
+    `N * dt**2 * sigma**2` per frequency bin or `dt * sigma**2` per WDM cell.
   - `from_psd(data, model)` → `like` with `data.Tobs / 2 * model.psd(f)` per
     channel at `f = np.fft.rfftfreq(data.N, data.dt)`.
   - `noise_psd(ch, data)` → `2 * noise.pair(ch, ch) / data.Tobs`.

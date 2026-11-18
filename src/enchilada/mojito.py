@@ -15,7 +15,7 @@ stored ``A2``/``E2``/``T2`` equal the orthonormal combination of
 ``X2``/``Y2``/``Z2`` that :meth:`enchilada.Covariance.in_basis` uses, so a
 campaign may load either triple.
 
-Imports h5py lazily; the ``mojito`` extra provides h5py and scipy.
+Imports h5py lazily; the ``mojito`` extra provides it.
 """
 
 from __future__ import annotations

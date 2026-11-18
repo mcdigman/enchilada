@@ -48,8 +48,7 @@ def white_covariance(data, variance):
     `variance` is one number for every channel or a channel -> number mapping.
     With X = dt * rfft(x) a stationary one-sided PSD S gives bin variance
     C = (Tobs / 2) S at every rfft bin; white noise has S = 2 sigma^2 / fs, so
-    C = N sigma^2 / fs^2. On a WDM grid an active pixel has variance
-    sigma^2 / fs and inactive pixels are exactly zero.
+    C = N sigma^2 / fs^2. On a WDM grid every cell has variance sigma^2 / fs.
     """
     grid = data.grid
     if grid.data_domain == "time":
@@ -66,7 +65,7 @@ def white_covariance(data, variance):
     return Covariance.like(
         data,
         {
-            ch: np.where(grid.active_mask, scale * levels[ch], 0.0)
+            ch: np.full(grid.channel_shape, scale * levels[ch])
             for ch in data.channel_names
         },
     )
