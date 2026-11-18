@@ -5,7 +5,7 @@ from dataclasses import dataclass, replace
 import numpy as np
 import pytest
 
-from conftest import make_observed, white_covariance
+from conftest import make_observed, starting_at, white_covariance
 from enchilada import BlockState, Wheel
 
 
@@ -95,10 +95,7 @@ def test_valid_rfft_signal_preserves_all_allowed_components(observed, num_time_s
             return current_block_state
 
     wheel = Wheel(observed)
-    wheel.add(
-        Signal(),
-        initial_block_state=observed.block_state(template=signal),
-    )
+    wheel.add(starting_at(Signal(), observed.block_state(template=signal)))
     wheel.run(1)
     np.testing.assert_array_equal(wheel.contribution("signal")["A"], signal["A"])
     np.testing.assert_array_equal(
@@ -130,6 +127,12 @@ class NoiseOnly:
 
     def __init__(self):
         self.state = self.State()
+
+    def initial_sample(self, conditional_residual, covariance, *, rng):
+        return conditional_residual.block_state(
+            covariance=white_covariance(conditional_residual, 1),
+            parameters={"variance": 1},
+        )
 
     def sample(self, conditional_residual, covariance, current_block_state, *, rng):
         self.state.steps += 1
@@ -173,8 +176,8 @@ def test_rejected_rfft_signal_preserves_estimates_state_and_rng(
     actual, expected = Wheel(observed, random_seed=8), Wheel(observed, random_seed=8)
     initial = noise_initial_result(observed, signal_value=0.5)
     actual_block, expected_block = InvalidOnce(), NoiseOnly()
-    actual.add(actual_block, initial_block_state=initial)
-    expected.add(expected_block, initial_block_state=initial)
+    actual.add(starting_at(actual_block, initial))
+    expected.add(starting_at(expected_block, initial))
     with pytest.raises(ValueError, match=rf"{endpoint}.*real"):
         actual.run(1)
     assert actual_block.state.steps == 1
@@ -201,7 +204,7 @@ def test_noise_only_result_preserves_data_without_signal_arrays(observed, domain
         observed = observed.to_frequency()
     wheel = Wheel(observed, random_seed=3)
     block = NoiseOnly()
-    wheel.add(block, initial_block_state=noise_initial_result(observed))
+    wheel.add(block)
     wheel.run(2)
 
     result = wheel.ledger["noise"]
@@ -247,6 +250,9 @@ def test_absent_signal_removes_previous_contribution_and_can_return(observed, do
         def __init__(self):
             self.state = self.State()
 
+        def initial_sample(self, conditional_residual, covariance, *, rng):
+            return population_initial_result(conditional_residual)
+
         def sample(self, conditional_residual, covariance, current_block_state, *, rng):
             for channel, samples in observed.channel_data.items():
                 np.testing.assert_allclose(
@@ -258,9 +264,9 @@ def test_absent_signal_removes_previous_contribution_and_can_return(observed, do
             return population_initial_result(conditional_residual)
 
     wheel = Wheel(observed)
-    wheel.add(NoiseOnly(), initial_block_state=noise_initial_result(observed))
+    wheel.add(NoiseOnly())
     population = Population()
-    wheel.add(population, initial_block_state=population_initial_result(observed))
+    wheel.add(population)
     np.testing.assert_allclose(
         wheel.working_residual.channel_data["A"], observed.channel_data["A"] - 0.25
     )
@@ -304,8 +310,8 @@ def test_rejected_noise_result_preserves_signal_covariance_state_and_rng(
     actual, expected = Wheel(observed, random_seed=8), Wheel(observed, random_seed=8)
     initial = noise_initial_result(observed, signal_value=0.5)
     actual_block, expected_block = FailsOnce(), NoiseOnly()
-    actual.add(actual_block, initial_block_state=initial)
-    expected.add(expected_block, initial_block_state=initial)
+    actual.add(starting_at(actual_block, initial))
+    expected.add(starting_at(expected_block, initial))
     error = "must return.*covariance" if failure == "omitted" else "grid"
     with pytest.raises(ValueError, match=error):
         actual.run(1)

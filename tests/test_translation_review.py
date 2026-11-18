@@ -5,7 +5,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from conftest import white_covariance
+from conftest import starting_at, white_covariance
 from enchilada import BlockState, Covariance, WDMGrid, Wheel
 from enchilada.translation import transform
 
@@ -40,16 +40,18 @@ def test_omitted_domain_and_explicit_same_domain_both_receive_the_covariance(obs
         def __init__(self, name):
             self.name = name
 
+        def initial_sample(self, conditional_residual, covariance, *, rng):
+            covariance.check_compatible(conditional_residual)
+            return BlockState()
+
         def sample(self, conditional_residual, covariance, current_block_state, *, rng):
             covariance.check_compatible(conditional_residual)
             received.append(("sample", self.name, conditional_residual.data_domain))
             return current_block_state
 
     wheel = Wheel(observed, white_covariance(observed, 2.0))
-    wheel.add(RecordInputs("default"), initial_block_state=BlockState())
-    wheel.add(
-        RecordInputs("explicit"), initial_block_state=BlockState(), data_domain="time"
-    )
+    wheel.add(RecordInputs("default"))
+    wheel.add(RecordInputs("explicit"), data_domain="time")
     assert received == []
     wheel.run(1)
     assert received == [("sample", "default", "time"), ("sample", "explicit", "time")]
@@ -82,7 +84,7 @@ def test_same_grid_block_receives_the_covariance_without_transform(
             return current_block_state
 
     wheel = Wheel(observed, white_covariance(observed, 2.0))
-    wheel.add(RecordCovariance(), initial_block_state=BlockState(), data_domain="time")
+    wheel.add(starting_at(RecordCovariance(), BlockState()), data_domain="time")
     wheel.run(2)
     assert received == [2.0, 2.0]
 
@@ -120,9 +122,11 @@ def test_rejected_translated_output_rolls_back_mutated_inputs_and_rng(
     control = Wheel(canonical, random_seed=7)
     for wheel in (actual, control):
         wheel.add(
-            MutateInputs(),
-            initial_block_state=BlockState(
-                parameters={"amplitude": 0.0, "coordinates": np.array([3.0])}
+            starting_at(
+                MutateInputs(),
+                BlockState(
+                    parameters={"amplitude": 0.0, "coordinates": np.array([3.0])}
+                ),
             ),
             data_domain="frequency",
         )
