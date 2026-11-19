@@ -30,9 +30,9 @@ def test_toy_time_blocks_preserve_draws_on_translated_observations(
     for observed in (data, translated_data):
         wheel = Wheel(observed, random_seed=42)
         for name, frequency in (("slow", 0.004), ("fast", 0.011)):
-            wheel.add(toy.SineBlock(name, frequency), data_domain="time")
+            wheel.add(toy.SineBlock(name, frequency), role="signal", data_domain="time")
         noise_block = toy.WhiteNoiseBlock("noise")
-        wheel.add(noise_block, data_domain="time")
+        wheel.add(noise_block, role="noise", data_domain="time")
         chain = []
 
         def collect(cycle, campaign, samples=chain):

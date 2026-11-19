@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from conftest import white_covariance
-from enchilada import Covariance, L1Data, Wheel, transform
+from enchilada import Covariance, FixedNoiseBlock, L1Data, Wheel, transform
 
 
 @pytest.fixture
@@ -131,11 +131,8 @@ def test_gb_frequency_registration_reads_its_native_frequency_covariance(
     data, noise = spectral_context
     options = {"num_frequency_divisions": 8} if storage_domain == "wdm" else {}
     observed = transform(data, storage_domain, **options)
-    wheel = Wheel(
-        observed,
-        initial_covariance=noise,
-        random_seed=0,
-    )
+    wheel = Wheel(observed, random_seed=0)
+    wheel.add(FixedNoiseBlock("noise", noise), role="noise", data_domain="frequency")
     block = make_block(gb_model)
 
     class ContextProbe:
@@ -150,7 +147,7 @@ def test_gb_frequency_registration_reads_its_native_frequency_covariance(
             block._context(conditional_residual, covariance)
             return current_block_state
 
-    wheel.add(ContextProbe(), data_domain="frequency")
+    wheel.add(ContextProbe(), role="signal", data_domain="frequency")
     wheel.run(1)
     assert wheel.covariance.grid == data.grid
     result = wheel.ledger["gb"]

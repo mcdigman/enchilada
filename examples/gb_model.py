@@ -133,10 +133,10 @@ class GBBlock:
     This CPU example uses one temperature and fixed ensemble splits. Adaptive
     moves or tempering would require carrying their additional evolving state.
 
-    Register with ``wheel.add(block, data_domain="frequency")``. This narrowband
-    likelihood requires a frequency-domain covariance on the data grid with
-    independent channels; it reads each channel's bin variances and converts
-    them to PSD units with ``2 C / Tobs``.
+    Register with ``wheel.add(block, role="signal", data_domain="frequency")``.
+    This narrowband likelihood requires a frequency-domain covariance on the
+    data grid with independent channels; it reads each channel's bin variances
+    and converts them to PSD units with ``2 C / Tobs``.
     """
 
     SUPPORTED_CHANNELS = ("A", "E")
@@ -259,9 +259,10 @@ class GBBlock:
         """Initialize block-owned walkers and publish the first walker's signal.
 
         Wheel calls this once at registration. It requires the campaign covariance
-        already in place on the frequency data grid: pass ``initial_covariance`` to
-        ``Wheel`` or register the noise block first. It resets ``self.state``, so a
-        fresh block instance belongs to each independent campaign.
+        already in place on the frequency data grid: register a noise block there
+        first (for a known PSD, ``FixedNoiseBlock`` with ``role="noise"`` and
+        ``data_domain="frequency"``). It resets ``self.state``, so a fresh block
+        instance belongs to each independent campaign.
         """
         gb, _ = self._context(conditional_residual, covariance)
         bounds = np.asarray(self.bounds)

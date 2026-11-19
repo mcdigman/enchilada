@@ -1,13 +1,15 @@
 """Two conjugate Gibbs source blocks plus sampled white noise.
 
 Blocks retain fixed model configuration. Wheel owns the current parameters,
-BlockState snapshots, covariance, and sampling random stream. Each block draws
-its own start from its prior in initial_sample, with the RNG Wheel passes at
-registration; an on_cycle_complete callback collects posterior chains outside
-the blocks. These blocks request time-domain inputs; Wheel also runs them on
-Fourier or WDM observations with data_domain="time", because the noise block
-publishes its covariance on that time grid. Their likelihood requires
-time-domain noise with independent channels.
+BlockState snapshots, the noise sum, and the sampling random stream. Each block
+draws its own start from its prior in initial_sample, with the RNG Wheel passes
+at registration; an on_cycle_complete callback collects posterior chains outside
+the blocks. The sine blocks register as signal blocks and the white-noise block
+as the one noise block, so the sines receive exactly its covariance. These
+blocks request time-domain inputs; Wheel also runs them on Fourier or WDM
+observations with data_domain="time", because the noise block publishes its
+covariance on that time grid. Their likelihood requires time-domain noise with
+independent channels.
 Run with:
 
     uv run --no-sync python examples/toy_fit.py
@@ -184,8 +186,10 @@ def run_toy_fit(n_cycles: int = 300, burn_in: int = 100, seed: int = 0):
     wheel = Wheel(observed, random_seed=int(campaign_seed.generate_state(1)[0]))
     # The sine starts need no covariance, so the signal blocks may register first.
     for name, frequency in (("slow", 0.004), ("fast", 0.011)):
-        wheel.add(SineBlock(name=name, freq=frequency), data_domain="time")
-    wheel.add(WhiteNoiseBlock(name="noise"), data_domain="time")
+        wheel.add(
+            SineBlock(name=name, freq=frequency), role="signal", data_domain="time"
+        )
+    wheel.add(WhiteNoiseBlock(name="noise"), role="noise", data_domain="time")
     chains: dict[str, list[float]] = {name: [] for name in ("slow", "fast", "noise")}
 
     def collect(cycle: int, w: Wheel) -> None:

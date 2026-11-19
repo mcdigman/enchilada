@@ -77,8 +77,8 @@ def test_toy_prior_is_random_and_separate_campaigns_are_reproducible():
     observed = toy.make_observed()
     campaigns = [Wheel(observed, random_seed=seed) for seed in (42, 42, 43)]
     for wheel in campaigns:
-        wheel.add(toy.SineBlock(name="slow", freq=0.004))
-        wheel.add(toy.WhiteNoiseBlock(name="noise"))
+        wheel.add(toy.SineBlock(name="slow", freq=0.004), role="signal")
+        wheel.add(toy.WhiteNoiseBlock(name="noise"), role="noise")
     priors = [w.ledger["slow"].parameters["amplitude"] for w in campaigns]
     assert priors[0] == priors[1]
     assert priors[0] != priors[2]

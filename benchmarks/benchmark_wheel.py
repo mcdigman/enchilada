@@ -13,7 +13,7 @@ import time
 
 import numpy as np
 
-from enchilada import Covariance, L1Data, Wheel
+from enchilada import Covariance, FixedNoiseBlock, L1Data, Wheel
 
 
 class FixedSignal:
@@ -44,9 +44,10 @@ def measure(num_blocks, num_samples, num_cycles, repeats):
     covariance = Covariance.like(
         observed, {name: np.ones(num_samples) for name in observed.channel_names}
     )
-    wheel = Wheel(observed, covariance, random_seed=0)
+    wheel = Wheel(observed, random_seed=0)
+    wheel.add(FixedNoiseBlock("noise", covariance), role="noise")
     for index in range(num_blocks):
-        wheel.add(FixedSignal(str(index), 0.5 / num_blocks))
+        wheel.add(FixedSignal(str(index), 0.5 / num_blocks), role="signal")
     wheel.run(1)
     elapsed = []
     for _ in range(repeats):
