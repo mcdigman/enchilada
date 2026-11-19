@@ -2,6 +2,7 @@
 run against a simulated Mojito-layout file."""
 
 import importlib.util
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -15,7 +16,7 @@ from conftest import (  # noqa: E402
     white_covariance,
     write_mojito_file,
 )
-from enchilada import decimate, load_mojito_l1, transform  # noqa: E402
+from enchilada import Covariance, L1Data, decimate, load_mojito_l1, transform  # noqa: E402
 
 FORGE = Path(__file__).resolve().parents[1] / "forge"
 FILE_SAMPLES = 4096  # 1024 s at the fixture's 4 Hz
@@ -330,3 +331,208 @@ def test_per_channel_psd_mapping(simulated_file, forge_data):
     np.testing.assert_allclose(covariance.E, 2 * covariance.A, rtol=1e-12)
     with pytest.raises(ValueError, match=r"no entry for channels \['E'\]"):
         forge_data.analytic_covariance(spectrum, {"A": forge_data.white_psd(2e-36)})
+
+
+# ---- ForgeBlock --------------------------------------------------------------
+
+
+@pytest.fixture
+def forge_block():
+    return load_forge("block")
+
+
+def tiny_spectrum(num_time_samples, channel_data):
+    """A frequency-grid L1Data at 1 Hz with hand-computable bins."""
+    return L1Data(
+        channel_data,
+        sample_rate_hz=1.0,
+        num_time_samples=num_time_samples,
+        channel_names=tuple(channel_data),
+        tdi_generation="2.0",
+        physical_observable="fractional_frequency",
+        data_domain="frequency",
+    )
+
+
+def simulated_spectrum(forge_data, path):
+    return forge_data.load_window(
+        path,
+        factor=FACTOR,
+        duration_s=DURATION_S,
+        channels=("A", "E"),
+        domain="frequency",
+    )
+
+
+def test_rfft_weights_count_each_bin_of_a_real_signal(forge_block):
+    np.testing.assert_array_equal(forge_block.rfft_weights(4), [1.0, 2.0, 1.0])
+    np.testing.assert_array_equal(forge_block.rfft_weights(5), [1.0, 2.0, 2.0])
+
+
+def test_forge_block_is_a_block_with_validated_settings(forge_block):
+    from enchilada import Block
+
+    block = forge_block.ForgeBlock()
+    assert isinstance(block, Block)
+    assert block.name == "forge"
+    assert (block.frequency_hz, block.prior_std, block.start_amplitude) == (
+        1e-3,
+        1e-17,
+        None,
+    )
+    assert block.state.num_sample_calls == 0
+    for settings in (
+        dict(name=""),
+        dict(frequency_hz=0.0),
+        dict(frequency_hz=np.inf),
+        dict(prior_std=-1.0),
+        dict(prior_std=np.nan),
+        dict(start_amplitude=np.nan),
+    ):
+        with pytest.raises(ValueError):
+            forge_block.ForgeBlock(**settings)
+
+
+@pytest.mark.parametrize(
+    ("num_time_samples", "frequency_hz", "basis", "expected_precision"),
+    [
+        # sin(2 pi t / 4) at 1 Hz: bin 1 is -2j; precision 1/0.25 + 2 * 4 / 2.
+        (4, 0.25, [0.0, -2.0j, 0.0], 8.0),
+        # sin(2 pi 0.4 t), 5 samples: the last bin, -2.5j, is interior and
+        # counts twice; precision 1/0.25 + 2 * 6.25 / 2.
+        (5, 0.4, [0.0, 0.0, -2.5j], 10.25),
+    ],
+)
+def test_sample_draws_the_exact_conjugate_posterior(
+    forge_block, num_time_samples, frequency_hz, basis, expected_precision
+):
+    basis = np.asarray(basis)
+    data = tiny_spectrum(num_time_samples, {"A": 4.0 * basis})
+    noise = Covariance.like(data, {"A": np.full(basis.size, 2.0)})
+    block = forge_block.ForgeBlock(frequency_hz=frequency_hz, prior_std=0.5)
+    start = block.initial_sample(data, noise, rng=np.random.default_rng(0))
+    np.testing.assert_allclose(
+        start.template["A"], start.parameters["amplitude"] * basis, atol=1e-12
+    )
+    # weighted data = 2 * Re(conj(h) 4h) / 2 = 4 |h|^2 at the one nonzero bin.
+    expected_mean = 4.0 * float(np.sum(np.abs(basis) ** 2)) / expected_precision
+    expected_std = expected_precision**-0.5
+    moved = block.sample(data, noise, start, rng=np.random.default_rng(1))
+    assert block.state.num_sample_calls == 1
+    np.testing.assert_allclose(
+        block.state.last_posterior_mean, expected_mean, rtol=1e-12
+    )
+    np.testing.assert_allclose(block.state.last_posterior_std, expected_std, rtol=1e-12)
+    np.testing.assert_allclose(
+        moved.template["A"], moved.parameters["amplitude"] * basis, atol=1e-12
+    )
+    draws = np.array(
+        [
+            block.sample(
+                data, noise, start, rng=np.random.default_rng(seed)
+            ).parameters["amplitude"]
+            for seed in range(2000)
+        ]
+    )
+    np.testing.assert_allclose(
+        draws.mean(), expected_mean, atol=4 * expected_std / np.sqrt(2000), rtol=0
+    )
+    np.testing.assert_allclose(draws.std(), expected_std, rtol=0.1)
+
+
+def test_initial_sample_renders_a_configured_start_or_a_prior_draw(forge_block):
+    basis = np.array([0.0, -2.0j, 0.0])
+    data = tiny_spectrum(4, {"A": 0.0 * basis, "E": 0.0 * basis})
+    configured = forge_block.ForgeBlock(frequency_hz=0.25, start_amplitude=1.5)
+    start = configured.initial_sample(data, None, rng=np.random.default_rng(0))
+    assert start.parameters == {"amplitude": 1.5}
+    for name in ("A", "E"):
+        np.testing.assert_allclose(start.template[name], 1.5 * basis, atol=1e-12)
+    drawn = forge_block.ForgeBlock(frequency_hz=0.25, prior_std=0.5)
+    draws = [
+        drawn.initial_sample(data, None, rng=np.random.default_rng(seed)).parameters[
+            "amplitude"
+        ]
+        for seed in (0, 0, 1)
+    ]
+    assert draws[0] == draws[1] != draws[2]
+    assert draws[0] == np.random.default_rng(0).normal(0.0, 0.5)
+    assert drawn.state.num_sample_calls == 0
+
+
+def test_block_refuses_inputs_its_likelihood_cannot_use(
+    simulated_file, forge_data, forge_block
+):
+    spectrum = simulated_spectrum(forge_data, simulated_file)
+    window = transform(spectrum, "time")
+    noise = forge_data.analytic_covariance(spectrum, forge_data.white_psd(2e-36))
+    block = forge_block.ForgeBlock()
+    rng = np.random.default_rng(0)
+    with pytest.raises(ValueError, match="data_domain='frequency'"):
+        block.initial_sample(window, None, rng=rng)
+    with pytest.raises(ValueError, match="Nyquist"):
+        forge_block.ForgeBlock(frequency_hz=0.5).initial_sample(
+            spectrum, noise, rng=rng
+        )
+    start = block.initial_sample(spectrum, None, rng=rng)
+    with pytest.raises(ValueError, match="needs a noise covariance"):
+        block.sample(spectrum, None, start, rng=rng)
+    with pytest.raises(ValueError, match="grid"):
+        block.sample(spectrum, white_covariance(window, 1e-36), start, rng=rng)
+    correlated = Covariance.like(
+        spectrum, {"A": noise.A, "E": noise.E, "AE": 0.5 * noise.A}
+    )
+    with pytest.raises(ValueError, match="independent channels"):
+        block.sample(spectrum, correlated, start, rng=rng)
+    assert block.state.num_sample_calls == 0
+
+
+def test_forge_block_passes_check_block_on_the_simulated_window(
+    simulated_file, forge_data, forge_block
+):
+    from enchilada.testing import check_block
+
+    spectrum = simulated_spectrum(forge_data, simulated_file)
+    noise = forge_data.analytic_covariance(spectrum, forge_data.white_psd(2e-36))
+    block = forge_block.ForgeBlock(frequency_hz=0.05)
+    check_block(block, spectrum, num_cycles=3, initial_covariance=noise, random_seed=1)
+    assert block.state.num_sample_calls == 3
+    assert np.isfinite(block.state.last_posterior_std)
+
+
+def test_forge_block_recovers_an_injected_amplitude(
+    simulated_file, forge_data, forge_block
+):
+    from enchilada import Wheel
+
+    window = forge_data.load_window(
+        simulated_file, factor=FACTOR, duration_s=DURATION_S, channels=("A", "E")
+    )
+    level = 2 * np.mean([window.channel_data[n].var() for n in ("A", "E")]) / window.fs
+    spectrum = transform(window, "frequency")
+    # 0.05 Hz is bin 30 of the 600 s window, inside the decimation passband.
+    block = forge_block.ForgeBlock(frequency_hz=0.05, prior_std=1e-17)
+    true_amplitude = 1e-18
+    basis = block._basis(spectrum)
+    observed = replace(
+        spectrum,
+        channel_data={
+            name: values + true_amplitude * basis
+            for name, values in spectrum.channel_data.items()
+        },
+    )
+    noise = forge_data.analytic_covariance(observed, forge_data.white_psd(level))
+    wheel = Wheel(observed, initial_covariance=noise, random_seed=3)
+    wheel.add(block, data_domain="frequency")
+    chain = []
+    wheel.run(
+        300,
+        on_cycle_complete=lambda cycle, campaign: chain.append(
+            campaign.ledger["forge"].parameters["amplitude"]
+        ),
+    )
+    samples = np.asarray(chain[50:])
+    posterior_std = block.state.last_posterior_std
+    assert posterior_std < 0.1 * true_amplitude  # the data, not the prior, decide
+    assert abs(samples.mean() - true_amplitude) < 4 * posterior_std
+    np.testing.assert_allclose(samples.std(), posterior_std, rtol=0.25)

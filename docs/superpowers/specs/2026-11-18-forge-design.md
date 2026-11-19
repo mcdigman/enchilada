@@ -157,7 +157,7 @@ Per grid, with `N = data.num_time_samples`, `fs`, `df = data.df`, `Tobs`:
 class ForgeBlock:
     name: str = "forge"
     frequency_hz: float = 1e-3
-    prior_std: float = 1e-20
+    prior_std: float = 1e-17
     start_amplitude: float | None = None
 
     @dataclass
@@ -170,12 +170,15 @@ class ForgeBlock:
 ```
 
 `__post_init__` checks the name is non-empty, `frequency_hz` and `prior_std`
-are finite and positive, and `start_amplitude` is finite when given. Three
-methods carry an `# EDIT` marker and a one-line comment saying what to
-replace them with:
+are finite and positive, and `start_amplitude` is finite when given. The
+`prior_std` default is wide next to the likelihood on Mojito-level data
+(`1e-20` would give a prior precision of `1e40`, above the likelihood's
+`6e38` on the test fixture, making the posterior the prior's). Three
+methods and two checks carry an `# EDIT` marker and a one-line comment
+saying what to replace them with:
 
 - `_template(conditional_residual, amplitude) -> BlockState`: the signal on
-  the block's grid. Placeholder: `_check_inputs` first, then the time axis
+  the block's grid. Placeholder: `_check_residual` first, then the time axis
   `t = start_time_gps + arange(N) / fs` from the residual's record metadata,
   `h = dt * rfft(sin(2 pi frequency_hz t))` as the per-channel basis (the same
   real sinusoid in every channel), and
@@ -199,12 +202,17 @@ replace them with:
   sampler; keep the rule that it returns a complete state after acceptance
   and rejection alike.
 
-`_check_inputs(conditional_residual, covariance)` is shared by all three:
-the residual must be on the frequency grid (`ValueError` naming
-`data_domain="frequency"`), `covariance` must not be `None`,
-`covariance.check_compatible(conditional_residual)` must pass, and cross terms
-between the residual's channels must be zero (`ValueError` "independent
-channels"), the way `SineBlock` in `examples/toy_fit.py` checks.
+Two checks are shared. `_check_residual(conditional_residual)`, called by
+`_template` (so by `initial_sample` and `sample` alike), requires the
+frequency grid (`ValueError` naming `data_domain='frequency'`) and
+`frequency_hz` below Nyquist. `_check_covariance(conditional_residual,
+covariance)`, called by `sample` only, requires a covariance (`ValueError`
+"needs a noise covariance"), `covariance.check_compatible(conditional_residual)`
+to pass, and zero cross terms between the residual's channels (`ValueError`
+"independent channels"), the way `SineBlock` in `examples/toy_fit.py` checks.
+A prior draw needs no covariance, so `initial_sample` accepts `None`. A
+module-level `rfft_weights(num_time_samples)` gives the bin weights: 1 at DC
+and at Nyquist when `num_time_samples` is even, 2 elsewhere.
 
 ### `block.ipynb`
 
@@ -224,7 +232,8 @@ Cells, in order; code cells print one line each so the test can assert on them:
    `covariance = analytic_covariance(residual, white_psd(LEVEL))`; prints the
    grid summary (domain, channels, `N`, `fs`, `Tobs`).
 3. Markdown: step 1, the model; what `_template`, `initial_sample`, `sample`
-   and `_check_inputs` do and what to replace.
+   do, what `_check_residual` and `_check_covariance` require, and what to
+   replace.
 4. Code: `from block import ForgeBlock`; `block = ForgeBlock(name="forge", frequency_hz=...)`;
    `assert isinstance(block, Block)`; prints the block.
 5. Markdown: step 2, exercise by hand.
@@ -303,12 +312,13 @@ Skip-safe: `pytest.importorskip("h5py", reason=...)` at module level, like
   message containing "frequency or WDM grid"; a per-channel mapping
   applies each callable to its channel and a mapping missing a channel raises.
 - `ForgeBlock`: `isinstance(ForgeBlock(), Block)`; `check_block` passes on
-  the simulated frequency window with the white covariance; `_check_inputs`
-  refuses a time-grid residual, a `None` covariance and a covariance with a
-  cross term; amplitude recovery: add `a_true * h` (with `h` the block's own
+  the simulated frequency window with the white covariance; `_check_residual`
+  refuses a time-grid residual and a frequency at or above Nyquist, and
+  `_check_covariance` refuses a `None` covariance, a covariance on another
+  grid and a covariance with a cross term; amplitude recovery: add `a_true * h` (with `h` the block's own
   basis at a frequency inside the decimation passband) to the simulated
-  frequency window's channels, run a `Wheel` with the matching white
-  covariance for 300 cycles, and assert the chain mean after warm-up lies
+  frequency window's channels, with `prior_std = 1e-17` so the data decide,
+  run a `Wheel` with the matching white covariance for 300 cycles, and assert the chain mean after warm-up lies
   within four posterior standard deviations of `a_true` and that the chain
   standard deviation agrees with the block's recorded posterior standard
   deviation to within 25 %.
