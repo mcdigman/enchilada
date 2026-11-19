@@ -137,7 +137,8 @@ class NoiseSum:
 
     Every leaf is a validated Covariance on one grid with one channel order;
     Wheel guarantees that before storing one, so `Covariance.__add__` never
-    refuses a sum here.
+    refuses a sum here for a grid or channel mismatch; only a non-finite total
+    can.
     """
 
     _tree: _SumTree[Noise] = field(

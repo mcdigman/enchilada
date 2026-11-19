@@ -395,9 +395,9 @@ class Covariance:
                 f"cannot add a covariance with channel_names {other.channel_names} "
                 f"to one with channel_names {self.channel_names}"
             )
-        return Covariance(
-            self.blocks + other.blocks, channel_names=self.channel_names, grid=self.grid
-        )
+        with np.errstate(over="ignore"):
+            blocks = self.blocks + other.blocks
+        return Covariance(blocks, channel_names=self.channel_names, grid=self.grid)
 
     # ---- copies -----------------------------------------------------------
 

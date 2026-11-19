@@ -582,3 +582,20 @@ class TestAdd:
             1.0 + cov
         with pytest.raises(TypeError):
             cov + None
+
+    def test_the_sum_is_validated_like_any_construction(self):
+        data = time_data()
+        huge = Covariance.like(data, {"A": np.full(8, 1e308), "E": np.full(8, 1e308)})
+        with pytest.raises(ValueError, match="finite"):
+            huge + huge
+
+    def test_a_subclass_operand_yields_a_plain_covariance_in_both_orders(self):
+        class Sub(Covariance):
+            pass
+
+        data = time_data()
+        plain = white_covariance(data, 1.0)
+        sub = Sub(plain.blocks, channel_names=plain.channel_names, grid=plain.grid)
+        for total in (sub + plain, plain + sub):
+            assert type(total) is Covariance
+            np.testing.assert_array_equal(total.A, 2.0)
