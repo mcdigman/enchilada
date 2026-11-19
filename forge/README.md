@@ -9,11 +9,11 @@ this folder assumes you have read it.
 
 ## The three steps
 
-1. **Fill in `block.py`.** `ForgeBlock` has three methods marked `# EDIT`:
-   `_template` renders the signal on the block's grid, `initial_sample`
-   draws or renders the start, `sample` advances the state. Two checks,
-   `_check_residual` and `_check_covariance`, say what the model needs from
-   its inputs. The placeholder is a sinusoid of one amplitude on the
+1. **Fill in `block.py`.** `ForgeBlock` marks five methods `# EDIT`. Three
+   are the model: `_template` renders the signal on the block's grid,
+   `initial_sample` draws or renders the start, `sample` advances the state.
+   Two are checks, `_check_residual` and `_check_covariance`, which say what
+   the model needs from its inputs. The placeholder is a sinusoid of one amplitude on the
    frequency grid with a conjugate Gaussian sampler, so everything runs
    before you change a line.
 2. **Run `block.ipynb`.** It loads a window of the simulated file, builds the
@@ -26,8 +26,8 @@ this folder assumes you have read it.
 
 ## Setup
 
-From the repository root, with h5py (either extra) and matplotlib (arrives
-with `numeric-orbits`):
+From the repository root (`numeric-orbits` brings h5py and, through
+lisaorbits, matplotlib; `examples` brings JupyterLab):
 
 ```sh
 uv sync --extra numeric-orbits --extra examples
@@ -43,7 +43,7 @@ The notebooks read three environment variables:
 | --- | --- | --- |
 | `ENCHILADA_MOJITO_L1` | the Mojito-layout L1 file | required |
 | `FORGE_DURATION_S` | native seconds to load | `86400` (one day) |
-| `FORGE_FACTOR` | decimation factor | `10` (4 Hz to 0.4 Hz) |
+| `FORGE_FACTOR` | decimation factor | `10` (0.4 Hz from a 4 Hz file such as Mojito's) |
 
 `data.py` is shared by both notebooks. `load_window` goes through
 `load_mojito_l1` and `decimate` and returns the window on the time,
@@ -62,13 +62,22 @@ diagnostics on `block.state` rather than in the ledger, and a fresh instance
 per campaign. Collect chains outside the block, as `wheel.ipynb` does. In
 the notebooks, change the settings cells and the lines marked `# EDIT` (the
 block's constructor, `TRUTH`); the asserts are the contract and name no
-parameter of the placeholder. Keep `State.num_sample_calls`: the notebooks
-assert on it.
+parameter of the placeholder. Keep `State.num_sample_calls`: `block.ipynb`
+asserts on it. To test recovery, inject a signal into the window the way
+`test_forge_block_recovers_an_injected_amplitude` does
+(`dataclasses.replace(residual, channel_data=...)`) and put the truth in
+`TRUTH`. The notebooks load from the file's start, and the loader refuses a
+window with a nonzero `tdi_flags` sample; `load_window(start_offset_s=...)`
+moves it.
 
 To move the block to another grid, change `DOMAIN` in both notebooks (for
-WDM also `NUM_FREQUENCY_DIVISIONS`, the row count; the decimated window
-length divided by it must be an even integer), render `_template` on that
-grid and update `_check_residual`. Every block receives the campaign's one
+WDM also `NUM_FREQUENCY_DIVISIONS`, the row count: it and the decimated
+window length divided by it must both be even integers, so choose
+`FORGE_DURATION_S` to fit, or load with `load_window(..., domain="wdm",
+num_frequency_divisions=..., num_time_divisions=...)`, which derives the
+duration), render `_template` on that grid, update `_check_residual`, and
+rewrite the likelihood in `sample` (`inner_product` is the frequency
+grid's). Every block receives the campaign's one
 covariance, so every block registers on its grid (a covariance does not
 translate between grids); another grid means moving `DOMAIN`, and with it
 the covariance, for the whole campaign.
@@ -85,15 +94,20 @@ the covariance, for the whole campaign.
 - **Anti-alias roll-off.** `decimate` passes the band fully only up to 0.8 of
   the new Nyquist frequency, so the PSD of the native noise overstates the
   cells above that (conservative) and the white time-grid variance by about
-  14 %. A WDM cell's variance is the PSD averaged across its band
-  (`domania.wdm_covariance`), so notches and steep walls are handled; row 0
+  13 %. A WDM cell's variance is half the PSD averaged across its band
+  (`domania.wdm_covariance`), so each cell's variance is right across
+  notches and steep walls (the diagonal covariance still drops the
+  correlations a steep wall puts between neighbouring cells); row 0
   interleaves DC and Nyquist.
 - **White stand-in.** The notebooks' `LEVEL` is a white PSD at the loaded
-  window's own variance (about 12 % below the in-band PSD, for the reason
-  above), a placeholder for the simulation's noise model, and a loud injected
+  window's own variance (for white native noise, about 12 % below the
+  in-band PSD, for the reason above), a placeholder for the simulation's noise model, and a loud injected
   signal inflates it. On coloured noise the variance-based level is a band
   average dominated by the loudest band, and the diagonal covariance on an
   untapered window ignores leakage on steep spectra, so posterior widths
   mean little until `PSD` is the simulation's model. The GB example's
-  `FixedLISANoise().psd` (lisatools, copied beside the notebooks) drops in
-  as `PSD` when you have that stack.
+  `FixedLISANoise().psd` (copy `examples/gb_model.py` beside the notebooks;
+  needs `lisaanalysistools`) is a TDI 1.5 sensitivity, while Mojito's
+  channels are TDI 2.0: convert it (equal arms: multiply by
+  `4 sin²(4π f L / c)`) and check its levels against the simulation's noise
+  model before using it as `PSD`.

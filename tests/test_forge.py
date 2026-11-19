@@ -24,10 +24,10 @@ from enchilada import Covariance, L1Data, decimate, load_mojito_l1, transform  #
 
 FORGE = Path(__file__).resolve().parents[1] / "forge"
 FILE_SAMPLES = 4096  # 1024 s at the fixture's 4 Hz
-FACTOR = 4
-DURATION_S = 600.0  # 2400 native samples -> 600 decimated samples at 1 Hz
-WINDOW_SAMPLES = 600
-NF, NT = 8, 16  # 512 native samples, longer than the 315-tap filter for factor 4
+FACTOR = 8  # 0.5 Hz: a slipped power of dt or fs cannot hide behind unit rates
+DURATION_S = 600.0  # 2400 native samples -> 300 decimated samples at 0.5 Hz
+WINDOW_SAMPLES = 300
+NF, NT = 8, 16  # 1024 native samples, longer than the 627-tap filter for factor 8
 
 
 def load_forge(name):
@@ -182,10 +182,11 @@ def test_wdm_window_reads_only_the_requested_samples(tmp_path, forge_data):
     ],
 )
 def test_load_window_refuses_inconsistent_requests(
-    simulated_file, forge_data, kwargs, message
+    tmp_path, forge_data, kwargs, message
 ):
+    # Every refusal comes before any file I/O, so a missing path serves.
     with pytest.raises(ValueError, match=message):
-        forge_data.load_window(simulated_file, factor=FACTOR, **kwargs)
+        forge_data.load_window(tmp_path / "missing.h5", factor=FACTOR, **kwargs)
 
 
 def test_load_window_validates_the_factor_before_reading(tmp_path, forge_data):
@@ -266,7 +267,7 @@ def test_wdm_cells_average_the_psd_across_each_band(simulated_file, forge_data):
     np.testing.assert_allclose(notched[1:], 0.25e-36, rtol=1e-12)
     # A PSD written for one-dimensional input works on the WDM path too.
     flat = forge_data.analytic_covariance(window, lambda f: np.full(len(f), 2e-36))
-    np.testing.assert_array_equal(flat.A, 1e-36)
+    np.testing.assert_allclose(flat.A, 1e-36, rtol=1e-12)
 
 
 @pytest.mark.parametrize("domain", ["time", "frequency", "wdm"])
@@ -687,7 +688,9 @@ def test_wheel_notebook_runs_on_the_simulated_file(
 REAL_FILE = os.environ.get("ENCHILADA_MOJITO_L1")
 
 
-@pytest.mark.skipif(not REAL_FILE, reason="set ENCHILADA_MOJITO_L1 to a Mojito L1 file")
+@pytest.mark.skipif(
+    not REAL_FILE, reason="set ENCHILADA_MOJITO_L1 to a Mojito L1 file (4 Hz)"
+)
 def test_forge_loads_an_hour_of_the_real_file(forge_data, forge_block):
     residual = forge_data.load_window(
         REAL_FILE, factor=10, duration_s=3600.0, domain="frequency", channels=("A", "E")

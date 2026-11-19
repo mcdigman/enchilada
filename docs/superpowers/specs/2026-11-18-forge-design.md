@@ -43,7 +43,7 @@ to `main` once PR #9 merges (as PRs #6 to #8 were stacked).
 forge/
   README.md      purpose, the three steps, environment variables, what to replace, caveats
   data.py        load_window, white_psd, analytic_covariance
-  block.py       ForgeBlock: the skeleton with three `# EDIT` methods
+  block.py       ForgeBlock: the skeleton with five `# EDIT` markers (three methods, two checks)
   block.ipynb    workbench: load, hand checks, check_block, closing checklist
   wheel.ipynb    short campaign with chain collection
 tests/test_forge.py
@@ -239,7 +239,7 @@ Cells, in order; code cells print one line each so the test can assert on them:
    white level that matches the window, marked as the placeholder for the
    simulation's PSD with the lisatools alternative shown in a comment;
    `residual = transform(window, DOMAIN, num_frequency_divisions=NUM_FREQUENCY_DIVISIONS)`;
-   `covariance = analytic_covariance(residual, white_psd(LEVEL))`; prints the
+   `PSD = white_psd(LEVEL)`; `covariance = analytic_covariance(residual, PSD)`; prints the
    grid summary (domain, channels, `N`, `fs`, `Tobs`).
 3. Markdown: step 1, the model; what `_template`, `initial_sample`, `sample`
    do, what `_check_residual` and `_check_covariance` require, and what to
@@ -308,10 +308,10 @@ Skip-safe: `pytest.importorskip("h5py", reason=...)` at module level, like
 `tests/test_mojito.py`. Modules are loaded with `importlib` from `forge/`.
 
 - Fixture `simulated_file(tmp_path, monkeypatch)`: `write_mojito_file(tmp_path / "simulated.h5", n=...)`
-  with `n = 4096` (1024 s at 4 Hz). The test settings are factor 4, a 600 s
-  window (600 decimated samples at 1 Hz) and a WDM grid `Nf = 8`, `Nt = 16`
-  (512 native samples, longer than the 315-tap anti-alias filter for factor
-  4; an `8 x 8` grid would be too short). Sets `ENCHILADA_MOJITO_L1` to the
+  with `n = 4096` (1024 s at 4 Hz). The test settings are factor 8 (0.5 Hz,
+  so a slipped power of `dt` or `fs` cannot hide behind unit rates), a 600 s
+  window (300 decimated samples) and a WDM grid `Nf = 8`, `Nt = 16` (1024
+  native samples, longer than the 627-tap anti-alias filter for factor 8). Sets `ENCHILADA_MOJITO_L1` to the
   file, `FORGE_DURATION_S` and `FORGE_FACTOR` to values that fit it. Returns
   the path.
 - `load_window`: a time window has `fs = native / factor` and the expected
@@ -373,8 +373,8 @@ is `src/enchilada`); the notebooks are never formatted.
 
 - `pyproject.toml`: add `forge/**/*.py`, `forge/**/*.ipynb` and
   `forge/**/*.md` to the sdist includes next to the `examples/**` entries;
-  add `forge` to `[tool.ruff] src`; add `"forge/*.ipynb" = ["I001", "E501"]`
-  to the per-file ignores.
+  add `forge` to `[tool.ruff] src` (the generated notebooks lint clean, so
+  they get no per-file ignores).
 - `forge/README.md`: what the forge is for; the three steps (fill in
   `block.py`, run `block.ipynb`, run `wheel.ipynb`); the environment
   variables (`ENCHILADA_MOJITO_L1`, `FORGE_DURATION_S`, `FORGE_FACTOR`); how to
@@ -382,7 +382,7 @@ is `src/enchilada`); the notebooks are never formatted.
   white-only covariance on the time grid, the 40 transient samples at each
   end of a decimated record, the anti-alias roll-off above 0.8 of the new
   Nyquist frequency (a native PSD overstates the cells above it and the
-  white time-grid variance by about 12 %; WDM cells are band averages, so
+  white time-grid variance by about 13 %; WDM cells are band averages, so
   notches are handled), the placeholder's white level is a stand-in for the
   simulation's PSD (about 12 % below the in-band PSD for the same reason);
   a pointer

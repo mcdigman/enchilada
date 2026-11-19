@@ -175,7 +175,7 @@ def analytic_covariance(data: L1Data, psd: PSD | Mapping[str, PSD]) -> Covarianc
 
     `decimate`'s anti-alias filter rolls off above 0.8 of the new Nyquist
     frequency, so the PSD of the native noise overstates the variance of the
-    cells above that, and the white time-grid variance by about 14 % (the
+    cells above that, and the white time-grid variance by about 13 % (the
     decimated variance is 12 % below `S * fs / 2`).
     """
     channels = tuple(data.channel_names)

@@ -129,4 +129,3 @@ select = ["E4", "E5", "E7", "E9", "F", "I", "B", "UP"]  # E5 = line length
 # print long formatted lines (E501). Both were verified to fire; do not broaden
 # this list without checking, so real problems in notebook cells still surface.
 "examples/*.ipynb" = ["I001", "E501"]
-"forge/*.ipynb" = ["I001", "E501"]
