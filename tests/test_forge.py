@@ -252,6 +252,16 @@ def test_wdm_cells_average_the_psd_across_each_band(simulated_file, forge_data):
         np.testing.assert_allclose(
             linear[band], 0.5 * linear_psd(band * band_spacing_hz), rtol=1e-9
         )
+    # A PSD that vanishes at every band centre averages to half its peak over
+    # a band (the Meyer window's partition of unity), so a band-centre
+    # evaluation would give zero here.
+    notched = forge_data.analytic_covariance(
+        window, lambda f: 1e-36 * np.sin(np.pi * f / band_spacing_hz) ** 2
+    ).A
+    np.testing.assert_allclose(notched[1:], 0.25e-36, rtol=1e-12)
+    # A PSD written for one-dimensional input works on the WDM path too.
+    flat = forge_data.analytic_covariance(window, lambda f: np.full(len(f), 2e-36))
+    np.testing.assert_array_equal(flat.A, 1e-36)
 
 
 @pytest.mark.parametrize("domain", ["time", "frequency", "wdm"])

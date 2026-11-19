@@ -139,8 +139,9 @@ Per grid, with `N = data.num_time_samples`, `fs`, `df = data.df`, `Tobs`:
   normalisation gives (`white_covariance` in `tests/conftest.py`: cell
   variance `sigma**2 / fs` with `S = 2 sigma**2 / fs`). The band-centre
   value `S(i * dF) / 2` was the first design; it is off by a factor of
-  about 200 at a TDI notch and by 0.4 on an `f**-4` wall (checked against
-  domania and a Monte Carlo), which is why the average is used.
+  about 200 at a notch of a toy TDI2-shaped PSD on a coarse grid (`Nf = 64`
+  at 0.4 Hz) and by 0.4 on an `f**-4` wall (checked against domania and a
+  Monte Carlo), which is why the average is used.
 - Time: the PSD is evaluated at the rfft frequencies `max(k * df, df)`; if
   the values are not all equal (`np.allclose` to the first) the function
   raises `ValueError("a coloured PSD has no per-sample covariance on the time

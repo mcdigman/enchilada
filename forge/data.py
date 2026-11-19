@@ -151,7 +151,11 @@ def _wdm_variance(psd: PSD, data: L1Data, name: str) -> np.ndarray:
     rows, columns = data.wdm_grid.array_shape
 
     def model(f: np.ndarray, t: np.ndarray) -> np.ndarray:
-        return _evaluate(psd, np.maximum(f, data.df), name)[None, None]
+        # domania hands over a 3-D frequency array; PSDs written for 1-D input
+        # get a flat one.
+        frequencies_hz = np.maximum(f, data.df)
+        values = _evaluate(psd, frequencies_hz.ravel(), name)
+        return values.reshape(frequencies_hz.shape)[None, None]
 
     return domania.wdm_covariance(model, Nf=rows, Nt=columns, dt=data.dt)[0, 0]
 
@@ -171,7 +175,8 @@ def analytic_covariance(data: L1Data, psd: PSD | Mapping[str, PSD]) -> Covarianc
 
     `decimate`'s anti-alias filter rolls off above 0.8 of the new Nyquist
     frequency, so the PSD of the native noise overstates the variance of the
-    cells above that, and the white time-grid variance by about 12 %.
+    cells above that, and the white time-grid variance by about 14 % (the
+    decimated variance is 12 % below `S * fs / 2`).
     """
     channels = tuple(data.channel_names)
     if callable(psd):
