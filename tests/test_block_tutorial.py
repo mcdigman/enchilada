@@ -133,3 +133,36 @@ def test_tutorial_block_instances_keep_independent_diagnostics(tutorial_definiti
     first.state.num_proposals = 5
     assert second.state.num_proposals == 0
     assert first.state is not second.state
+
+
+def test_tutorial_blocks_draw_their_start_from_the_prior_when_unconfigured(
+    tutorial_definitions,
+):
+    import numpy as np
+
+    from enchilada import L1Data
+
+    data = L1Data(
+        channel_data={"A": np.zeros(64)},
+        channel_names=("A",),
+        sample_rate_hz=1.0,
+        tdi_generation="2.0",
+        physical_observable="fractional_frequency",
+    )
+    signal = tutorial_definitions.SineAmplitudeBlock(name="signal", frequency_hz=0.125)
+    noise = tutorial_definitions.WhiteNoiseVarianceBlock()
+
+    def starts(block, key):
+        draws = []
+        for seed in (0, 0, 1):
+            start = block.initial_sample(data, None, rng=np.random.default_rng(seed))
+            draws.append(start.parameters[key])
+        return draws
+
+    # Without a configured start, the start is a prior draw from the given RNG.
+    amplitudes = starts(signal, "amplitude")
+    variances = starts(noise, "variance")
+    for same_a, same_b, other in (amplitudes, variances):
+        assert same_a == same_b
+        assert same_a != other
+    assert min(variances) > 0

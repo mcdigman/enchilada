@@ -166,10 +166,11 @@ def test_initial_sample_consumes_the_campaign_rng_reproducibly(observed):
     same_a, same_b, other = (start(seed, PriorStart()) for seed in (11, 11, 12))
     assert same_a == same_b
     assert same_a != other
-    first_draw = np.random.default_rng(11).normal()
+    rng = np.random.default_rng(11)
+    first_draw = rng.normal()
     # The start took the seed's first draw, so the first sample sees the second.
     assert same_a[0] == first_draw
-    assert same_a[1] != first_draw
+    assert same_a[1] == rng.normal()
     # A start that draws nothing leaves the stream where it was.
     _, draw = start(11, StartingBlock())
     assert draw == first_draw
@@ -281,7 +282,7 @@ def test_failed_initial_sample_leaves_registration_and_rng_unchanged(
         "type": (TypeError, "starting.initial_sample must return a BlockState"),
         "shape": (ValueError, "length 3, expected"),
         "nonfinite": (ValueError, "finite"),
-        "covariance": (ValueError, "grid"),
+        "covariance": (ValueError, "covariance is on grid"),
         "copy": (RuntimeError, "start state cannot be copied"),
     }[failure]
     wheel = Wheel(observed, random_seed=7)

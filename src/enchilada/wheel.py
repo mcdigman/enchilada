@@ -173,16 +173,17 @@ class Wheel:
 
         initial_sample receives the current working residual (the observations
         minus the adopted starts of every block registered so far) on this
-        block's grid, the current covariance (None until a block supplies one;
-        a covariance on another grid than this block's is refused here with
-        ValueError) and a copy of the campaign RNG that is committed with the
-        state. Blocks therefore start in registration order: register a noise
-        block before the blocks whose starts need its covariance. The returned
-        state is validated and adopted exactly like a sample return: its
-        template must be on this block's grid, and Wheel translates it to the
-        observation grid for storage. A covariance in the start makes this
-        block the covariance owner. A block that must start at a chosen point
-        takes that point in its constructor and returns it from initial_sample.
+        block's grid, the current covariance (None until the constructor or a
+        block supplies one; a covariance on another grid than this block's is
+        refused here with ValueError) and a copy of the campaign RNG that is
+        committed with the state. Blocks therefore start in registration order:
+        register a noise block before the blocks whose starts need its
+        covariance. The returned state is validated and adopted exactly like a
+        sample return: its template must be on this block's grid, and Wheel
+        translates it to the observation grid for storage. A covariance in the
+        start makes this block the covariance owner. A block that must start at
+        a chosen point takes that point in its constructor and returns it from
+        initial_sample.
 
         data_domain selects time, frequency or wdm for this block's residual,
         current state and published covariance. None keeps the observation grid.
