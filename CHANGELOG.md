@@ -69,6 +69,7 @@ All notable changes to enchilada are documented here. The format follows
   `initial_sample`. Registration now consumes campaign RNG draws when the
   start draws from `rng`, and a block registered on another grid than the
   current covariance is refused at `add`, before `initial_sample` is called.
+  Under `check_block`, construct the block with its start.
 - `Wheel(initial_covariance=...)` accepts a covariance on any grid of the same
   record (same sample count and sample rate), not only the observation grid.
 - Wheel holds one covariance on the grid its owner published it on and hands a

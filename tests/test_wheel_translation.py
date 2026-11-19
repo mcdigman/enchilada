@@ -210,7 +210,9 @@ def test_invalid_domain_selection_does_not_register_or_sample():
 def test_a_start_on_the_wrong_wdm_grid_is_refused(monkeypatch):
     # add transforms the residual to WDM before initial_sample runs; the wrong
     # template is then caught by the grid check inside transform, before any
-    # WDM conversion of the template itself, so domania never sees it.
+    # WDM conversion of the template itself, so domania never sees it. The patch
+    # is installed from inside initial_sample because add legitimately uses
+    # domania to build the residual first.
     data = observations()
     wheel = Wheel(data)
     # Both grids represent 64 samples, but the selected (Nf, Nt) = (4, 16)

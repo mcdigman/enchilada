@@ -178,7 +178,8 @@ class MyBlock:
         self.name = name
         self.state = self.State()
 
-    # Implement sample(...) using self.state for sampler continuation.
+    # Implement initial_sample(...) and sample(...); self.state carries
+    # sampler continuation.
 ```
 
 `State` is defined by each block; it is not an enchilada interface. Use separate
@@ -221,9 +222,9 @@ resources, and sampler history on the block or in an external sink, outside
 Every block draws or constructs its own start. `Wheel.add` calls the block's
 `initial_sample` once with the observations minus the adopted starts of the
 blocks registered before it, on the block's grid, together with the current
-covariance (`None` until a block supplies one) and the campaign RNG, then
-validates and adopts the returned state exactly like a `sample` return. For a
-known injection, make the start block configuration:
+covariance (`None` until the constructor or a block supplies one) and the
+campaign RNG, then validates and adopts the returned state exactly like a
+`sample` return. For a known injection, make the start block configuration:
 
 ```python
 signal_block = SineAmplitudeBlock(
@@ -250,10 +251,12 @@ Wheel validates and defensively copies the published state before adopting it
 atomically.
 The model must check that its parameters, rendered signal, and algorithm state
 agree and that the parameters lie within its prior support; Wheel cannot establish
-these scientific conditions. The initial estimate changes the ledger and residual,
-while preserving the observations and declared prior. Subsequent calls sample normally; starting
-at an injection does not hold its parameters fixed. This initializes one block;
-it does not restore a full campaign checkpoint or the Wheel RNG state.
+these scientific conditions.
+The adopted start changes the ledger and residual, while preserving the
+observations and declared prior. Subsequent calls sample normally; starting
+at an injection does not hold its parameters fixed. Registration starts one
+block; restoring a whole campaign checkpoint, including the Wheel RNG state,
+is outside `add` (see [Known limitations](#known-limitations)).
 
 `L1Data` holds channel arrays and observation conventions. Supply noise as an
 explicit `Covariance` when constructing Wheel:
@@ -447,11 +450,11 @@ wheel.add(wdm_block, data_domain="wdm", num_frequency_divisions=8)
 ```
 
 Each block's `initial_sample` receives the residual on its selected domain and
-WDM grid and returns its start there. Wheel converts
-the conditional residual and previous signal into the selected representation,
-then converts returned outputs back to the canonical observation grid before
-atomic adoption. Omitting `data_domain` keeps the default handoff. To convert a
-standalone state containing a template, supply its source grid:
+WDM grid and returns its start there. Wheel converts the conditional residual
+and previous signal into the selected representation, then converts returned
+outputs back to the canonical observation grid before atomic adoption. Omitting
+`data_domain` keeps the default handoff. To convert a standalone state
+containing a template, supply its source grid:
 `transform(state, "wdm", num_frequency_divisions=8, reference_data=observed)`.
 Physical parameters are copied without reinterpretation; block-local sampler
 state does not pass through translation.
