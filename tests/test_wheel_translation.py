@@ -1,8 +1,9 @@
 """Wheel keeps accepted signals on its observation grid.
 
-A covariance stays on the grid its owner published it on. A block registered
-on that grid receives it; a block on another grid is refused at add, or at the
-next run once the owner has published on another grid.
+The noise sum lives on the grid of the first noise publication. A block
+registered on that grid receives it; a noise block on another grid is refused
+at add, and a signal block on another grid is refused at add or at the next
+run once a noise block has published elsewhere.
 """
 
 from dataclasses import dataclass, replace
@@ -11,7 +12,15 @@ import numpy as np
 import pytest
 
 from conftest import starting_at, white_covariance
-from enchilada import BlockState, Covariance, L1Data, WDMGrid, Wheel, transform
+from enchilada import (
+    BlockState,
+    Covariance,
+    FixedNoiseBlock,
+    L1Data,
+    WDMGrid,
+    Wheel,
+    transform,
+)
 from enchilada.testing import EchoBlock
 
 
@@ -102,7 +111,7 @@ def test_mixed_blocks_receive_matching_inputs_and_return_canonical_states(
         options = {"num_time_divisions": 4} if domain == "wdm" else {}
         block = ConstantSignal(name, amplitude, domain)
         blocks[name] = block
-        wheel.add(block, data_domain=domain, **options)
+        wheel.add(block, role="signal", data_domain=domain, **options)
     wheel.run(3)
     assert wheel.working_residual.data_domain == canonical_domain
     restored = transform(wheel.residual(), "time")
@@ -117,7 +126,8 @@ def test_wdm_noise_publication_is_held_on_the_wdm_grid():
         name = "noise"
 
         def sample(self, conditional_residual, covariance, current_block_state, *, rng):
-            covariance.check_compatible(conditional_residual)
+            assert covariance is None  # the only noise block receives no sum
+            current_block_state.covariance.check_compatible(conditional_residual)
             assert isinstance(current_block_state.covariance, Covariance)
             return current_block_state
 
@@ -134,6 +144,7 @@ def test_wdm_noise_publication_is_held_on_the_wdm_grid():
     wheel = Wheel(data)
     wheel.add(
         starting_at(PixelNoise(), initial),
+        role="noise",
         data_domain="wdm",
         num_frequency_divisions=8,
     )
@@ -147,7 +158,7 @@ def test_wdm_noise_publication_is_held_on_the_wdm_grid():
     np.testing.assert_array_equal(wheel.covariance.A, variances)
 
 
-@pytest.mark.parametrize("failure", ["signal_shape", "covariance_grid"])
+@pytest.mark.parametrize("failure", ["signal_shape", "covariance"])
 def test_failed_translated_result_preserves_accepted_state_and_rng(failure):
     fail = [True]
 
@@ -159,10 +170,9 @@ def test_failed_translated_result_preserves_accepted_state_and_rng(failure):
             if fail[0]:
                 if failure == "signal_shape":
                     return BlockState(template={"A": np.zeros(4, complex)})
+                # A signal block may not publish a covariance, on any grid.
                 return BlockState(
-                    covariance=white_covariance(
-                        transform(conditional_residual, "time"), 1.0
-                    )
+                    covariance=white_covariance(conditional_residual, 1.0)
                 )
             return BlockState(parameters={"amplitude": value})
 
@@ -173,13 +183,15 @@ def test_failed_translated_result_preserves_accepted_state_and_rng(failure):
     for wheel in (actual, expected):
         wheel.add(
             starting_at(RandomSignal(), BlockState(parameters={"amplitude": 0.0})),
+            role="signal",
             data_domain="frequency",
         )
     before = actual.ledger["random"].parameters.copy()
-    match = "covariance is on grid" if failure == "covariance_grid" else None
+    match = "registered as a signal block" if failure == "covariance" else None
     with pytest.raises(ValueError, match=match):
         actual.run(1)
     assert actual.ledger["random"].parameters == before
+    assert actual.covariance is None
     fail[0] = False
     actual.run(1)
     expected.run(1)
@@ -201,9 +213,9 @@ def test_invalid_domain_selection_does_not_register_or_sample():
 
     wheel = Wheel(observations())
     with pytest.raises(ValueError, match="data_domain|target_domain"):
-        wheel.add(NeverCalled(), data_domain="unknown")
+        wheel.add(NeverCalled(), role="signal", data_domain="unknown")
     with pytest.raises(ValueError, match="data_domain|wdm"):
-        wheel.add(NeverCalled(), num_time_divisions=8)
+        wheel.add(NeverCalled(), role="signal", num_time_divisions=8)
     assert len(wheel.ledger) == 0
 
 
@@ -233,6 +245,7 @@ def test_a_start_on_the_wrong_wdm_grid_is_refused(monkeypatch):
     with pytest.raises(ValueError, match="shape"):
         wheel.add(
             WrongGrid("wrong_grid", 1.0, "wdm"),
+            role="signal",
             data_domain="wdm",
             num_frequency_divisions=4,
         )
@@ -268,14 +281,17 @@ def test_explicit_domain_revalidates_mutated_start_arrays(domain):
     with pytest.raises(TypeError, match="numpy array"):
         wheel.add(
             starting_at(ConstantSignal("invalid_array", 1.0, domain), start),
+            role="signal",
             data_domain=domain,
         )
     assert len(wheel.ledger) == 0
 
 
-def test_block_on_another_grid_than_the_covariance_is_refused_at_add():
-    """The Wheel does not translate a covariance: a block registered on another
-    grid than the current covariance is refused before initial_sample is called."""
+@pytest.mark.parametrize("role", ["signal", "noise"])
+def test_block_on_another_grid_than_the_covariance_is_refused_at_add(role):
+    """The Wheel neither translates nor adds a covariance across grids: a block
+    registered on another grid than the noise sum is refused before
+    initial_sample is called, with a message for its role."""
 
     class NeverSampled:
         name = "frequency_block"
@@ -291,71 +307,89 @@ def test_block_on_another_grid_than_the_covariance_is_refused_at_add():
             )
 
     data = observations()
-    wheel = Wheel(data, white_covariance(data, 0.25), random_seed=3)
+    wheel = Wheel(data, random_seed=3)
+    wheel.add(FixedNoiseBlock("time_noise", white_covariance(data, 0.25)), role="noise")
     rng_before = wheel._rng.bit_generator.state
-    with pytest.raises(ValueError, match="does not translate between grids") as info:
-        wheel.add(NeverSampled(), data_domain="frequency")
+    if role == "signal":
+        match = "does not translate between grids"
+    else:
+        match = "does not add across grids"
+    with pytest.raises(ValueError, match=match) as info:
+        wheel.add(NeverSampled(), role=role, data_domain="frequency")
     message = str(info.value)
     assert "'frequency_block'" in message
     assert "data_domain='frequency'" in message and "data_domain='time'" in message
-    assert "Register the block on the covariance's grid" in message
+    if role == "signal":
+        assert "Register the block on the covariance's grid" in message
+    else:
+        assert "campaign covariance is on grid" in message
     assert wheel._rng.bit_generator.state == rng_before
-    assert len(wheel.ledger) == 0
+    assert list(wheel.ledger) == ["time_noise"]
+    assert "frequency_block" not in wheel._roles
     assert wheel.covariance.grid == data.grid
     np.testing.assert_array_equal(wheel.covariance.A, 0.25)
 
 
 def test_wdm_block_on_a_time_covariance_is_refused_before_the_transform(monkeypatch):
-    # Formerly refused at run; the covariance-grid check in _block_inputs now
-    # runs at add, before the residual is transformed and before initial_sample.
+    # The covariance-grid check in _block_inputs runs at add, before the
+    # residual is transformed and before initial_sample.
+    data = observations()
+    wheel = Wheel(data)
+    wheel.add(FixedNoiseBlock("noise", white_covariance(data, 1.0)), role="noise")
+
     def unexpected_transform(*args, **kwargs):
         raise AssertionError("the grid check must come before any WDM transform")
 
     monkeypatch.setattr("enchilada._transforms._wdm_transform", unexpected_transform)
-    data = observations()
-    wheel = Wheel(data, white_covariance(data, 1.0))
     with pytest.raises(ValueError, match="does not translate between grids"):
-        wheel.add(EchoBlock("wdm_block"), data_domain="wdm", num_frequency_divisions=8)
-    assert len(wheel.ledger) == 0
+        wheel.add(
+            EchoBlock("wdm_block"),
+            role="signal",
+            data_domain="wdm",
+            num_frequency_divisions=8,
+        )
+    with pytest.raises(ValueError, match="does not add across grids"):
+        wheel.add(
+            FixedNoiseBlock("wdm_noise", white_covariance(data, 1.0)),
+            role="noise",
+            data_domain="wdm",
+            num_frequency_divisions=8,
+        )
+    assert list(wheel.ledger) == ["noise"]
     assert wheel.covariance.grid == data.grid
 
 
-def test_default_block_is_refused_once_a_frequency_noise_owner_has_published():
-    """A block registered without data_domain is on the observation grid; once a
-    noise owner on the frequency grid publishes there, it is refused at run."""
+def test_default_block_is_refused_once_a_frequency_noise_block_has_published():
+    """A signal block registered without data_domain is on the observation
+    grid; once a noise block registered on the frequency grid publishes there,
+    the signal block is refused at run."""
 
     class TimeSignal:
         name = "signal"
 
         def sample(self, conditional_residual, covariance, current_block_state, *, rng):
-            assert covariance is None  # only the first cycle reaches sample
-            amplitude = rng.normal()
-            return conditional_residual.block_state(
-                {
-                    name: np.full_like(values, amplitude)
-                    for name, values in conditional_residual.channel_data.items()
-                },
-                parameters={"amplitude": amplitude},
-            )
+            raise AssertionError("refused at run before sample is reached")
 
     class FrequencyNoise:
         name = "noise"
 
-        def sample(self, conditional_residual, covariance, current_block_state, *, rng):
+        def initial_sample(self, conditional_residual, covariance, *, rng):
             assert conditional_residual.data_domain == "frequency"
             return BlockState(
                 covariance=white_covariance(conditional_residual, 1.0),
                 parameters={"level": 1.0},
             )
 
+        def sample(self, conditional_residual, covariance, current_block_state, *, rng):
+            raise AssertionError("the signal block fails first in the cycle")
+
     data = observations()
     wheel = Wheel(data, random_seed=3)
-    wheel.add(starting_at(TimeSignal(), BlockState(parameters={"amplitude": 0.0})))
     wheel.add(
-        starting_at(FrequencyNoise(), BlockState(parameters={"level": 0.0})),
-        data_domain="frequency",
+        starting_at(TimeSignal(), BlockState(parameters={"amplitude": 0.0})),
+        role="signal",
     )
-    wheel.run(1)  # the signal samples without a covariance; the owner publishes
+    wheel.add(FrequencyNoise(), role="noise", data_domain="frequency")
     assert wheel.covariance.grid == transform(data, "frequency").grid
     signal_before = wheel.ledger["signal"]
     covariance_before = wheel.covariance
@@ -369,14 +403,14 @@ def test_default_block_is_refused_once_a_frequency_noise_owner_has_published():
     assert wheel._rng.bit_generator.state == rng_before
     entry = wheel.ledger["signal"]
     assert entry.parameters == signal_before.parameters
-    np.testing.assert_array_equal(entry.template["A"], signal_before.template["A"])
+    assert entry.template is None
     assert wheel.ledger["noise"].parameters == {"level": 1.0}
     assert wheel.covariance.grid == covariance_before.grid
     np.testing.assert_array_equal(wheel.covariance.blocks, covariance_before.blocks)
 
 
 def test_covariance_returned_on_another_grid_than_the_block_is_refused():
-    """A block must publish on the grid of the data it received."""
+    """A noise block must publish on the grid of the data it received."""
 
     class TimeNoiseFromFrequency:
         name = "frequency_noise"
@@ -391,9 +425,14 @@ def test_covariance_returned_on_another_grid_than_the_block_is_refused():
             )
 
     data = observations()
+    spectrum = data.to_frequency()
+    start = BlockState(
+        covariance=white_covariance(spectrum, 0.5), parameters={"level": 0.5}
+    )
     wheel = Wheel(data, random_seed=3)
     wheel.add(
-        starting_at(TimeNoiseFromFrequency(), BlockState(parameters={"level": 0.0})),
+        starting_at(TimeNoiseFromFrequency(), start),
+        role="noise",
         data_domain="frequency",
     )
     rng_before = wheel._rng.bit_generator.state
@@ -401,11 +440,12 @@ def test_covariance_returned_on_another_grid_than_the_block_is_refused():
         ValueError, match="frequency_noise.sample covariance is on grid"
     ):
         wheel.run(1)
-    assert wheel.covariance is None
     assert wheel._rng.bit_generator.state == rng_before
     entry = wheel.ledger["frequency_noise"]
-    assert entry.parameters == {"level": 0.0}
-    assert entry.template is None and entry.covariance is None
+    assert entry.parameters == {"level": 0.5}
+    assert entry.template is None
+    assert wheel.covariance.grid == spectrum.grid
+    np.testing.assert_array_equal(wheel.covariance.A, white_covariance(spectrum, 0.5).A)
     np.testing.assert_array_equal(
         wheel.residual().channel_data["A"], data.channel_data["A"]
     )
@@ -415,9 +455,8 @@ def test_covariance_published_on_the_block_grid_is_held_there():
     class FrequencyNoise:
         name = "frequency_noise"
 
-        def sample(self, conditional_residual, covariance, current_block_state, *, rng):
+        def _publish(self, conditional_residual, level):
             assert conditional_residual.data_domain == "frequency"
-            level = 1.0 + abs(rng.normal())
             return BlockState(
                 covariance=Covariance.like(
                     conditional_residual,
@@ -429,12 +468,15 @@ def test_covariance_published_on_the_block_grid_is_held_there():
                 parameters={"level": level},
             )
 
+        def initial_sample(self, conditional_residual, covariance, *, rng):
+            return self._publish(conditional_residual, 1.0)
+
+        def sample(self, conditional_residual, covariance, current_block_state, *, rng):
+            return self._publish(conditional_residual, 1.0 + abs(rng.normal()))
+
     data = observations()
     wheel = Wheel(data, random_seed=3)
-    wheel.add(
-        starting_at(FrequencyNoise(), BlockState(parameters={"level": 0.0})),
-        data_domain="frequency",
-    )
+    wheel.add(FrequencyNoise(), role="noise", data_domain="frequency")
     wheel.run(2)
     assert wheel.covariance.grid == data.to_frequency().grid
     level = wheel.ledger["frequency_noise"].parameters["level"]
@@ -454,7 +496,12 @@ def test_noise_only_start_on_the_block_grid_is_adopted_there(domain):
         )
     )
     wheel = Wheel(data)
-    wheel.add(starting_at(EchoBlock("noise"), start), data_domain=domain, **options)
+    wheel.add(
+        starting_at(EchoBlock("noise"), start),
+        role="noise",
+        data_domain=domain,
+        **options,
+    )
     assert wheel.covariance.grid == reference.grid
     np.testing.assert_array_equal(wheel.covariance.A, variances)
     assert wheel.ledger["noise"].covariance.grid == reference.grid
@@ -469,7 +516,12 @@ def test_noise_only_start_on_another_grid_than_the_block_is_refused_at_registrat
     start = BlockState(covariance=white_covariance(data, 1.0))  # on the time grid
     wheel = Wheel(data)
     with pytest.raises(ValueError, match="noise.initial_sample covariance is on grid"):
-        wheel.add(starting_at(EchoBlock("noise"), start), data_domain=domain, **options)
+        wheel.add(
+            starting_at(EchoBlock("noise"), start),
+            role="noise",
+            data_domain=domain,
+            **options,
+        )
     assert len(wheel.ledger) == 0
     assert wheel.covariance is None
 
@@ -477,8 +529,13 @@ def test_noise_only_start_on_another_grid_than_the_block_is_refused_at_registrat
 def test_wheel_refuses_a_covariance_with_reordered_channel_names():
     data = observations()
     reordered = replace(data, channel_names=("E", "A"))
+    wheel = Wheel(data)
     with pytest.raises(ValueError, match="channel_names"):
-        Wheel(data, white_covariance(reordered, 1.0))
+        wheel.add(
+            FixedNoiseBlock("noise", white_covariance(reordered, 1.0)), role="noise"
+        )
+    assert len(wheel.ledger) == 0
+    assert wheel.covariance is None
 
 
 def test_start_covariance_with_reordered_channel_names_is_refused_at_registration():
@@ -488,10 +545,36 @@ def test_start_covariance_with_reordered_channel_names_is_refused_at_registratio
     wheel = Wheel(data, random_seed=3)
     rng_before = wheel._rng.bit_generator.state
     with pytest.raises(ValueError, match="channel_names"):
-        wheel.add(starting_at(EchoBlock("noise"), start))
+        wheel.add(starting_at(EchoBlock("noise"), start), role="noise")
     assert len(wheel.ledger) == 0
     assert wheel._blocks == []
     assert wheel._block_domains == {}
     assert wheel._block_indices == {}
+    assert wheel._roles == {}
     assert wheel.covariance is None
     assert wheel._rng.bit_generator.state == rng_before
+
+
+def test_two_wdm_noise_blocks_add_on_the_wdm_grid():
+    data = observations()
+    reference, options = block_reference(data, "wdm")
+    ones = np.ones(reference.grid.channel_shape)
+    floor = Covariance.like(reference, {name: ones for name in data.channel_names})
+    excess = Covariance.like(reference, {name: 2 * ones for name in data.channel_names})
+    wheel = Wheel(data)
+    wheel.add(
+        FixedNoiseBlock("floor", floor), role="noise", data_domain="wdm", **options
+    )
+    wheel.add(
+        FixedNoiseBlock("excess", excess), role="noise", data_domain="wdm", **options
+    )
+    assert wheel.covariance.grid == reference.grid
+    np.testing.assert_array_equal(wheel.covariance.A, 3.0)
+    spectral = white_covariance(data.to_frequency(), 1.0)
+    with pytest.raises(ValueError, match="does not add across grids"):
+        wheel.add(
+            FixedNoiseBlock("spectral", spectral), role="noise", data_domain="frequency"
+        )
+    wheel.run(1)
+    np.testing.assert_array_equal(wheel.covariance.A, 3.0)
+    assert list(wheel.ledger) == ["floor", "excess"]
