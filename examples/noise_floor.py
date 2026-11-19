@@ -5,10 +5,20 @@ the known instrument floor on every call; ExcessNoiseBlock samples an extra
 white-noise variance with a Metropolis random walk in log-variance. Wheel hands
 the excess block the floor as its `covariance` (the sum over the other noise
 blocks) and keeps the campaign covariance equal to floor + excess, which is what
-a signal block registered here would receive. Run with:
+a signal block registered here would receive.
+
+The likelihood is a Gaussian likelihood of time-domain data with independent
+channels: each time sample is an independent real Gaussian whose variance is in
+per-sample units, and cross-channel terms are not modelled. On Fourier or WDM
+observations both blocks must therefore be registered with data_domain="time",
+and the floor built on that time grid. One excess variance is shared across all
+channels. ExcessNoiseBlock refuses a None floor, so it must be registered after
+another noise block. Run with:
 
     uv run --no-sync python examples/noise_floor.py
 """
+
+from typing import Any
 
 import numpy as np
 
@@ -24,6 +34,14 @@ class ExcessNoiseBlock:
     `sample` call runs `steps_per_call` Metropolis steps with a Gaussian proposal
     of width `step` in log-variance. The likelihood of the time-domain residual
     uses the total covariance `received + own`, formed with `Covariance.__add__`.
+
+    The likelihood is Gaussian over time-domain data with independent channels:
+    each time sample is an independent real Gaussian with its variance in
+    per-sample units, and cross-channel terms are not modelled (a floor with
+    cross-channel terms is refused). One excess variance is shared across all
+    channels. On Fourier or WDM observations register the block with
+    `data_domain="time"` and build the floor on that time grid. The block
+    refuses a `None` floor, so register it after another noise block.
     """
 
     def __init__(
@@ -34,8 +52,16 @@ class ExcessNoiseBlock:
         step: float = 0.3,
         steps_per_call: int = 10,
     ):
-        if not (0 < low < high):
-            raise ValueError("the prior needs 0 < low < high")
+        if not np.isfinite([low, high]).all() or not 0 < low < high:
+            raise ValueError("the prior needs finite low and high with 0 < low < high")
+        if not np.isfinite(step) or step <= 0:
+            raise ValueError("step must be finite and positive")
+        if (
+            isinstance(steps_per_call, bool)
+            or not isinstance(steps_per_call, int)
+            or steps_per_call <= 0
+        ):
+            raise ValueError("steps_per_call must be a positive integer")
         self.name = name
         self.low, self.high = low, high
         self.step, self.steps_per_call = step, steps_per_call
@@ -77,6 +103,14 @@ class ExcessNoiseBlock:
                 "ExcessNoiseBlock adds to another noise block's covariance; "
                 "register the floor (for instance a FixedNoiseBlock) first"
             )
+        channels = covariance.channel_names
+        if any(
+            np.any(covariance.pair(first, second) != 0)
+            for first in channels
+            for second in channels
+            if first != second
+        ):
+            raise ValueError("ExcessNoiseBlock requires uncorrelated channels")
         return covariance
 
     def initial_sample(
@@ -100,6 +134,8 @@ class ExcessNoiseBlock:
         rng: np.random.Generator,
     ) -> BlockState:
         """Advance a Metropolis random walk in log-variance against the residual."""
+        # _own repeats this check, but a frequency-domain residual with a None
+        # floor should report the domain error before the missing floor.
         if conditional_residual.data_domain != "time":
             raise ValueError("ExcessNoiseBlock requires time-domain data")
         floor = self._require_floor(covariance)
@@ -134,19 +170,27 @@ def make_observed(seed: int = 0) -> L1Data:
     )
 
 
-def run_example(n_cycles: int = 400, burn_in: int = 100, seed: int = 0) -> dict:
+def run_example(
+    n_cycles: int = 400, burn_in: int = 100, seed: int = 0
+) -> dict[str, Any]:
     """Run the campaign; return the excess posterior summary and the Wheel."""
     if not 0 <= burn_in < n_cycles:
         raise ValueError("burn_in must be nonnegative and smaller than n_cycles")
     observed = make_observed(seed)
+    # Seed the campaign from a child of the observation seed so registration and
+    # sampling never replay the observation-noise draws.
     campaign_seed = np.random.SeedSequence(seed).spawn(1)[0]
     wheel = Wheel(observed, random_seed=int(campaign_seed.generate_state(1)[0]))
     floor = Covariance.like(
         observed,
-        {ch: np.full(observed.N, TRUTH["floor"]) for ch in observed.channel_names},
+        {
+            ch: np.full(observed.num_time_samples, TRUTH["floor"])
+            for ch in observed.channel_names
+        },
     )
-    # Both are noise blocks. The floor goes first so the excess block's start
-    # already receives it; Wheel keeps floor + excess as the campaign covariance.
+    # Both are noise blocks. The floor must go first because the excess block
+    # refuses to start without it; Wheel keeps floor + excess as the campaign
+    # covariance.
     wheel.add(FixedNoiseBlock("floor", floor), role="noise")
     wheel.add(ExcessNoiseBlock("excess"), role="noise")
     chain: list[float] = []

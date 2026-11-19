@@ -6,6 +6,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from conftest import make_observed as small_observed
+from conftest import white_covariance
+from enchilada import BlockState, Covariance, FixedNoiseBlock, Wheel
+from enchilada.testing import check_block
+
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
 
 
@@ -42,13 +47,11 @@ def test_the_excess_variance_is_recovered_above_the_floor(noise_floor):
     )
 
 
-def test_the_excess_block_reads_the_floor_it_is_handed(noise_floor):
-    from enchilada import BlockState, Covariance
-
+def test_the_excess_block_publishes_only_its_own_covariance_and_refuses_bad_inputs(
+    noise_floor,
+):
     observed = noise_floor.make_observed(seed=1)
-    floor = Covariance.like(
-        observed, {ch: np.full(observed.N, 0.25) for ch in observed.channel_names}
-    )
+    floor = white_covariance(observed, 0.25)
     block = noise_floor.ExcessNoiseBlock("excess")
     rng = np.random.default_rng(0)
     start = block.initial_sample(observed, floor, rng=rng)
@@ -61,29 +64,67 @@ def test_the_excess_block_reads_the_floor_it_is_handed(noise_floor):
         block.initial_sample(observed, None, rng=rng)
     with pytest.raises(ValueError, match="time-domain"):
         block.sample(observed.to_frequency(), None, start, rng=rng)
+    # A floor with a cross-channel term is refused.
+    two = small_observed(rng, num_time_samples=16, channel_names=("A", "E"))
+    blocks = np.zeros((2, 2, 16))
+    blocks[0, 0] = blocks[1, 1] = 1.0
+    blocks[0, 1] = blocks[1, 0] = 0.3
+    correlated = Covariance(blocks, channel_names=("A", "E"), grid=two.grid)
+    with pytest.raises(ValueError, match="uncorrelated"):
+        block.initial_sample(two, correlated, rng=rng)
+
+
+def test_the_excess_block_passes_check_block_beside_a_floor(noise_floor):
+    observed = noise_floor.make_observed(seed=0)
+    check_block(
+        noise_floor.ExcessNoiseBlock("excess"),
+        observed,
+        role="noise",
+        noise_blocks=(FixedNoiseBlock("floor", white_covariance(observed, 0.25)),),
+    )
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"low": 0.0},
+        {"low": 1.0, "high": 1.0},
+        {"high": float("inf")},
+        {"step": 0.0},
+        {"step": float("nan")},
+        {"steps_per_call": 0},
+        {"steps_per_call": True},
+        {"steps_per_call": 2.5},
+    ],
+)
+def test_the_excess_block_validates_its_settings(noise_floor, kwargs):
+    with pytest.raises(ValueError):
+        noise_floor.ExcessNoiseBlock("excess", **kwargs)
 
 
 def test_a_different_floor_moves_the_excess_posterior(noise_floor):
-    from enchilada import Covariance, FixedNoiseBlock, Wheel
-
     # The data have total variance 1.0 (floor 0.25 + excess 0.75). A floor of
     # 0.5 must leave an excess of 0.5, so the block has to read the floor it is
     # handed rather than assume the example's own 0.25.
     observed = noise_floor.make_observed(seed=0)
-    floor = Covariance.like(
-        observed, {ch: np.full(observed.N, 0.5) for ch in observed.channel_names}
-    )
-    wheel = Wheel(observed, random_seed=0)
-    wheel.add(FixedNoiseBlock("floor", floor), role="noise")
+    wheel = Wheel(observed, random_seed=1)
+    wheel.add(FixedNoiseBlock("floor", white_covariance(observed, 0.5)), role="noise")
     wheel.add(noise_floor.ExcessNoiseBlock("excess"), role="noise")
     chain: list[float] = []
-    wheel.run(
-        200,
-        on_cycle_complete=lambda cycle, w: chain.append(
-            w.ledger["excess"].parameters["variance"]
-        ),
-    )
+
+    def collect(cycle, w):
+        np.testing.assert_array_equal(w.ledger["floor"].covariance.A, 0.5)
+        chain.append(w.ledger["excess"].parameters["variance"])
+
+    wheel.run(200, on_cycle_complete=collect)
     samples = np.asarray(chain[50:])
     mean, std = float(samples.mean()), float(samples.std())
     assert mean == pytest.approx(0.5, abs=max(5 * std, 0.05)), (mean, std)
     assert abs(mean - noise_floor.TRUTH["excess"]) >= 0.1, (mean, std)
+
+
+def test_a_seeded_campaign_is_reproducible(noise_floor):
+    first = noise_floor.run_example(n_cycles=60, burn_in=10, seed=0)
+    second = noise_floor.run_example(n_cycles=60, burn_in=10, seed=0)
+    assert first["posterior_mean"] == second["posterior_mean"]
+    assert first["posterior_std"] == second["posterior_std"]
