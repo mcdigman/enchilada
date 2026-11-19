@@ -5,7 +5,7 @@ from dataclasses import dataclass, replace
 import numpy as np
 import pytest
 
-from conftest import make_observed, starting_at, white_covariance
+from conftest import const_block_state, make_observed, starting_at, white_covariance
 from enchilada import BlockState, Wheel
 
 
@@ -102,12 +102,6 @@ def test_valid_rfft_signal_preserves_all_allowed_components(observed, num_time_s
     np.testing.assert_array_equal(wheel.contribution("signal")["A"], signal["A"])
     np.testing.assert_array_equal(
         wheel.working_residual.channel_data["A"], -signal["A"]
-    )
-
-
-def noise_start(observed):
-    return observed.block_state(
-        covariance=white_covariance(observed, 1), parameters={"variance": 1}
     )
 
 
@@ -307,6 +301,13 @@ def test_absent_signal_removes_previous_contribution_and_can_return(observed, do
     )
 
 
+class Baseline:
+    name = "baseline"
+
+    def sample(self, conditional_residual, covariance, current_block_state, *, rng):
+        return current_block_state
+
+
 @pytest.mark.parametrize("failure", ["omitted", "wrong_grid", "template"])
 def test_rejected_noise_result_preserves_covariance_state_and_rng(observed, failure):
     fail = [True]
@@ -335,10 +336,13 @@ def test_rejected_noise_result_preserves_covariance_state_and_rng(observed, fail
             return result
 
     actual, expected = Wheel(observed, random_seed=8), Wheel(observed, random_seed=8)
-    initial = noise_start(observed)
     actual_block, expected_block = FailsOnce(), NoiseOnly()
-    actual.add(starting_at(actual_block, initial), role="noise")
-    expected.add(starting_at(expected_block, initial), role="noise")
+    for wheel, block in ((actual, actual_block), (expected, expected_block)):
+        # A constant signal gives the residual a non-zero baseline to preserve.
+        wheel.add(
+            starting_at(Baseline(), const_block_state(observed, 0.5)), role="signal"
+        )
+        wheel.add(block, role="noise")
     error = {
         "omitted": (
             "must return a covariance because 'noise' is registered as a noise block"
@@ -353,8 +357,9 @@ def test_rejected_noise_result_preserves_covariance_state_and_rng(observed, fail
     assert actual.ledger["noise"].parameters == expected.ledger["noise"].parameters
     np.testing.assert_array_equal(actual.covariance.A, white_covariance(observed, 1).A)
     np.testing.assert_array_equal(actual.contribution("noise")["A"], 0.0)
-    np.testing.assert_array_equal(
-        actual.working_residual.channel_data["A"], observed.channel_data["A"]
+    np.testing.assert_array_equal(actual.contribution("baseline")["A"], 0.5)
+    np.testing.assert_allclose(
+        actual.working_residual.channel_data["A"], observed.channel_data["A"] - 0.5
     )
     actual.run(1)
     expected.run(1)
@@ -364,6 +369,6 @@ def test_rejected_noise_result_preserves_covariance_state_and_rng(observed, fail
     assert actual.ledger["noise"].parameters == expected.ledger["noise"].parameters
     assert actual.ledger["noise"].template is None
     np.testing.assert_array_equal(actual.covariance.A, white_covariance(observed, 2).A)
-    np.testing.assert_array_equal(
-        actual.working_residual.channel_data["A"], observed.channel_data["A"]
+    np.testing.assert_allclose(
+        actual.working_residual.channel_data["A"], observed.channel_data["A"] - 0.5
     )

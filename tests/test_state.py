@@ -160,7 +160,12 @@ def test_failed_adoption_preserves_rng_and_published_state(observed, failure):
     block = Invalid()
     actual.add(block, role="signal")
     expected.add(Counter(), role="signal")
-    with pytest.raises((RuntimeError, ValueError)):
+    expected_error, message = {
+        "copy": (RuntimeError, "cannot copy parameter"),
+        "covariance": (ValueError, "registered as a signal block"),
+        "exception": (RuntimeError, "sampler failed"),
+    }[failure]
+    with pytest.raises(expected_error, match=message):
         actual.run(1)
     assert actual.ledger["counter"].parameters == {"a": 0.0}
     assert block.state.n == 1
