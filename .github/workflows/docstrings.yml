@@ -38,4 +38,4 @@ jobs:
       - name: Run pydoclint
         run: >
           uvx "pydoclint@${{ env.PYDOCLINT_VERSION }}"
-          enchilada
+          src/enchilada
