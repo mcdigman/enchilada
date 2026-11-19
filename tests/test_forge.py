@@ -2,6 +2,10 @@
 run against a simulated Mojito-layout file."""
 
 import importlib.util
+import json
+import os
+import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -585,3 +589,70 @@ def test_forge_block_recovers_an_injected_amplitude(
         samples.size
     )
     np.testing.assert_allclose(samples.std(), posterior_std, rtol=0.25)
+
+
+# ---- the notebooks -----------------------------------------------------------
+
+
+def notebook_cells(name):
+    notebook = json.loads((FORGE / name).read_text())
+    assert notebook["nbformat"] == 4
+    return notebook["cells"]
+
+
+def cell_code(cell):
+    """A code cell's source without IPython magics (the autoreload lines)."""
+    return "\n".join(
+        line
+        for line in "".join(cell["source"]).splitlines()
+        if not line.startswith("%")
+    )
+
+
+@pytest.mark.parametrize("name", ["block.ipynb", "wheel.ipynb"])
+def test_forge_notebook_cells_compile(name):
+    cells = notebook_cells(name)
+    code_cells = [cell for cell in cells if cell["cell_type"] == "code"]
+    assert code_cells
+    assert [cell["id"] for cell in cells] == [
+        f"forge-{name[:-6]}-{index:02d}" for index in range(len(cells))
+    ]
+    for index, cell in enumerate(code_cells, 1):
+        compile(cell_code(cell), f"{name}:cell-{index}", "exec")
+
+
+def run_notebook(name, tmp_path):
+    code = "\n\n".join(
+        cell_code(cell) for cell in notebook_cells(name) if cell["cell_type"] == "code"
+    )
+    code += (
+        "\nif plt is not None:\n"
+        "    for number in plt.get_fignums():\n"
+        "        plt.figure(number).canvas.draw()\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=FORGE,
+        env={
+            **os.environ,
+            "MPLBACKEND": "Agg",
+            "MPLCONFIGDIR": str(tmp_path / "matplotlib"),
+        },
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    assert result.returncode == 0, result.stderr
+    return result.stdout
+
+
+def test_block_notebook_runs_on_the_simulated_file(simulated_file, tmp_path):
+    out = run_notebook("block.ipynb", tmp_path)
+    assert "frequency grid, channels ('A', 'E')" in out, out
+    assert "check_block passed" in out, out
+
+
+def test_wheel_notebook_runs_on_the_simulated_file(simulated_file, tmp_path):
+    out = run_notebook("wheel.ipynb", tmp_path)
+    assert "posterior amplitude:" in out, out
+    assert "residual rms after the run" in out, out

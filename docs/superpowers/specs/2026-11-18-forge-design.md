@@ -249,14 +249,15 @@ Cells, in order; code cells print one line each so the test can assert on them:
    template keys equal the channel names, shapes equal the residual's, values
    finite, `parameters` has `"amplitude"`;
    `moved = block.sample(residual, covariance, start, rng=rng)`; asserts
-   `block.state.num_sample_calls == 1`; prints both amplitudes and the
+   the sample counter advanced by one from its value before the cell (so
+   the cell can be re-run); prints both amplitudes and the
    posterior mean and standard deviation.
 7. Code (optional plot): `try: import matplotlib.pyplot as plt` and plot
    `|residual.channel_data["A"]|` and `|moved.template["A"]|` against the rfft
    frequencies on log axes; `except ImportError: pass`.
 8. Markdown: step 3, the contract check.
 9. Code: `check_block(deepcopy(block), residual, num_cycles=3, initial_covariance=covariance, random_seed=1)`;
-   `assert block.state.num_sample_calls == 1` (the copy ran, not the original);
+   asserts the sample counter is unchanged (the copy ran, not the original);
    prints `check_block passed`.
 10. Markdown: closing checklist (prior support, likelihood normalisation and
     the bin weights, domain assertions, independent instances per campaign,
@@ -275,7 +276,9 @@ Cells, in order; code cells print one line each so the test can assert on them:
    `wheel.add(...)` slot; prints the residual RMS after the start.
 4. Code: `chain = []`; `on_cycle_complete` appends
    `wheel.ledger["forge"].parameters["amplitude"]`; `wheel.run(200, on_cycle_complete=...)`;
-   prints `posterior amplitude: mean +/- std over 200 cycles` and, when
+   drops the first `WARM_UP` cycles (0: the placeholder draws the posterior
+   exactly; an MCMC sampler needs some) and prints `posterior amplitude:
+   mean +/- std over N cycles` and, when
    `TRUE_AMPLITUDE` is set, the offset in units of the posterior standard
    deviation; prints the residual RMS after the run.
 5. Code (optional plot): the trace of `chain`, guarded like `block.ipynb`
