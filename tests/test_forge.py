@@ -532,6 +532,14 @@ def test_inner_product_matches_the_time_domain_sum(
         2 * np.sum(sinusoid**2) / sigma2,
         rtol=1e-10,
     )
+    # The data's own norm exercises the DC and Nyquist weights, which the
+    # sinusoid (a whole number of cycles in the window) does not touch.
+    data = spectrum.channel_data
+    np.testing.assert_allclose(
+        forge_block.inner_product(data, data, spectrum, noise),
+        sum(np.sum(window.channel_data[name] ** 2) for name in ("A", "E")) / sigma2,
+        rtol=1e-10,
+    )
 
 
 def test_forge_block_recovers_an_injected_amplitude(

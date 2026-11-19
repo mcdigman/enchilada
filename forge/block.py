@@ -41,8 +41,10 @@ def inner_product(
     / C_k`, with `C_k` the per-bin variance `covariance.pair(channel, channel)`
     (`(Tobs / 2) S(f_k)` for a one-sided PSD `S`) and `w_k` from `rfft_weights`.
     `-0.5 * inner_product(r, r, ...)` is a residual `r`'s log-likelihood up to
-    a constant; a Gaussian amplitude posterior has precision `<h|h>` and mean
-    `<h|d> / <h|h>`."""
+    a constant; the likelihood alone gives an amplitude precision `<h|h>` and
+    mean `<h|d> / <h|h>`, and a Gaussian prior adds `1 / prior_std**2` to the
+    precision. Cross terms are ignored, not refused: run `_check_covariance`
+    first."""
     weights = rfft_weights(conditional_residual.num_time_samples)
     total = 0.0
     for name in conditional_residual.channel_names:
