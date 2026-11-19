@@ -11,7 +11,7 @@ from dataclasses import dataclass, replace
 import numpy as np
 import pytest
 
-from conftest import starting_at, white_covariance
+from conftest import const_block_state, starting_at, white_covariance
 from enchilada import (
     BlockState,
     Covariance,
@@ -158,7 +158,7 @@ def test_wdm_noise_publication_is_held_on_the_wdm_grid():
     np.testing.assert_array_equal(wheel.covariance.A, variances)
 
 
-@pytest.mark.parametrize("failure", ["signal_shape", "covariance"])
+@pytest.mark.parametrize("failure", ["signal_shape", "signal_publishes_covariance"])
 def test_failed_translated_result_preserves_accepted_state_and_rng(failure):
     fail = [True]
 
@@ -187,7 +187,11 @@ def test_failed_translated_result_preserves_accepted_state_and_rng(failure):
             data_domain="frequency",
         )
     before = actual.ledger["random"].parameters.copy()
-    match = "registered as a signal block" if failure == "covariance" else None
+    match = (
+        "registered as a signal block"
+        if failure == "signal_publishes_covariance"
+        else None
+    )
     with pytest.raises(ValueError, match=match):
         actual.run(1)
     assert actual.ledger["random"].parameters == before
@@ -385,14 +389,17 @@ def test_default_block_is_refused_once_a_frequency_noise_block_has_published():
 
     data = observations()
     wheel = Wheel(data, random_seed=3)
-    wheel.add(
-        starting_at(TimeSignal(), BlockState(parameters={"amplitude": 0.0})),
-        role="signal",
-    )
+    start = const_block_state(data, 0.5)
+    start.parameters["amplitude"] = 0.5
+    wheel.add(starting_at(TimeSignal(), start), role="signal")
     wheel.add(FrequencyNoise(), role="noise", data_domain="frequency")
     assert wheel.covariance.grid == transform(data, "frequency").grid
     signal_before = wheel.ledger["signal"]
     covariance_before = wheel.covariance
+    residual_before = {
+        name: values.copy()
+        for name, values in wheel.working_residual.channel_data.items()
+    }
     rng_before = wheel._rng.bit_generator.state
     with pytest.raises(
         ValueError,
@@ -403,7 +410,10 @@ def test_default_block_is_refused_once_a_frequency_noise_block_has_published():
     assert wheel._rng.bit_generator.state == rng_before
     entry = wheel.ledger["signal"]
     assert entry.parameters == signal_before.parameters
-    assert entry.template is None
+    for values in entry.template.values():
+        np.testing.assert_array_equal(values, 0.5)
+    for name, values in residual_before.items():
+        np.testing.assert_array_equal(wheel.working_residual.channel_data[name], values)
     assert wheel.ledger["noise"].parameters == {"level": 1.0}
     assert wheel.covariance.grid == covariance_before.grid
     np.testing.assert_array_equal(wheel.covariance.blocks, covariance_before.blocks)
@@ -575,6 +585,19 @@ def test_two_wdm_noise_blocks_add_on_the_wdm_grid():
         wheel.add(
             FixedNoiseBlock("spectral", spectral), role="noise", data_domain="frequency"
         )
+    received: list[np.ndarray] = []
+
+    class WdmSignal(EchoBlock):
+        def sample(self, conditional_residual, covariance, current_block_state, *, rng):
+            covariance.check_compatible(conditional_residual)
+            received.append(covariance.A.copy())
+            return super().sample(
+                conditional_residual, covariance, current_block_state, rng=rng
+            )
+
+    wheel.add(WdmSignal("wdm_signal"), role="signal", data_domain="wdm", **options)
     wheel.run(1)
     np.testing.assert_array_equal(wheel.covariance.A, 3.0)
-    assert list(wheel.ledger) == ["floor", "excess"]
+    assert len(received) == 1
+    np.testing.assert_array_equal(received[0], 3.0)
+    assert list(wheel.ledger) == ["floor", "excess", "wdm_signal"]

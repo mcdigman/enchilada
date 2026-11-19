@@ -933,6 +933,7 @@ class TestObservedDataIsChecked:
         wheel = Wheel(observed)
         with pytest.raises(ValueError, match="grid"):
             wheel.add(FixedNoiseBlock("fixed", unchecked), role="noise")
+        assert len(wheel.ledger) == 0
         assert wheel.covariance is None
 
         class PublishesUnchecked(EchoBlock):
@@ -977,6 +978,8 @@ class TestObservedDataIsChecked:
 
         wheel = Wheel(observed)
         wheel.add(PublishesCompatible("noise"), role="noise")
+        assert type(wheel._noise_sum.total) is Covariance
+        assert type(wheel.ledger["noise"].covariance) is Covariance
         wheel.run(1)
         assert type(wheel._noise_sum.total) is Covariance
         assert wheel._noise_sum.total is not compatible
