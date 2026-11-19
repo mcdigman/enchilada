@@ -94,6 +94,18 @@ def test_toy_prior_is_random_and_separate_campaigns_are_reproducible():
     )
 
 
+def test_white_noise_block_refuses_to_sit_beside_another_noise_block():
+    from enchilada import Covariance, FixedNoiseBlock, Wheel
+
+    toy = load_example("toy_fit")
+    observed = toy.make_observed()
+    wheel = Wheel(observed, random_seed=0)
+    floor = Covariance.like(observed, {"A": np.full(observed.num_time_samples, 0.2)})
+    wheel.add(FixedNoiseBlock("floor", floor), role="noise", data_domain="time")
+    with pytest.raises(ValueError, match="only noise block"):
+        wheel.add(toy.WhiteNoiseBlock(name="noise"), role="noise", data_domain="time")
+
+
 def test_sine_conditional_includes_declared_amplitude_prior():
     from enchilada import L1Data
 

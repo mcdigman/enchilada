@@ -3,6 +3,9 @@
 Run from an installed checkout: python benchmarks/benchmark_wheel.py
 Use --samples and --blocks to explore a different workload. Timings include
 defensive snapshots and validation; these are measurements, not test thresholds.
+The workload is the fixed signals plus one FixedNoiseBlock, which republishes its
+covariance every cycle and is revalidated by Wheel each time, so timings are not
+comparable with runs from before the noise sum.
 """
 
 import argparse
@@ -45,6 +48,8 @@ def measure(num_blocks, num_samples, num_cycles, repeats):
         observed, {name: np.ones(num_samples) for name in observed.channel_names}
     )
     wheel = Wheel(observed, random_seed=0)
+    # The noise goes first so every signal block sees the covariance from
+    # registration onward, as before.
     wheel.add(FixedNoiseBlock("noise", covariance), role="noise")
     for index in range(num_blocks):
         wheel.add(FixedSignal(str(index), 0.5 / num_blocks), role="signal")
@@ -57,6 +62,7 @@ def measure(num_blocks, num_samples, num_cycles, repeats):
     np.testing.assert_allclose(wheel.residual().channel_data["A"], 0.5)
     return {
         "blocks": num_blocks,
+        "noise_blocks": 1,
         "samples_per_channel": num_samples,
         "channels": 3,
         "median_seconds_per_cycle": statistics.median(elapsed),

@@ -5,7 +5,8 @@ BlockState snapshots, the noise sum, and the sampling random stream. Each block
 draws its own start from its prior in initial_sample, with the RNG Wheel passes
 at registration; an on_cycle_complete callback collects posterior chains outside
 the blocks. The sine blocks register as signal blocks and the white-noise block
-as the one noise block, so the sines receive exactly its covariance. These
+as the one noise block, so the sines receive exactly its covariance and the
+noise block itself receives None because it is alone. These
 blocks request time-domain inputs; Wheel also runs them on Fourier or WDM
 observations with data_domain="time", because the noise block publishes its
 covariance on that time grid. Their likelihood requires time-domain noise with
@@ -98,7 +99,11 @@ class SineBlock:
 
 
 class WhiteNoiseBlock:
-    """White-noise variance with a proper inverse-gamma(shape, scale) prior."""
+    """White-noise variance with a proper inverse-gamma(shape, scale) prior.
+
+    It models the whole noise, so the covariance it receives must be None
+    (register it as the only noise block).
+    """
 
     def __init__(self, name: str, shape: float = 2.0, scale: float = 1.0):
         if not np.isfinite([shape, scale]).all() or min(shape, scale) <= 0:
@@ -106,6 +111,13 @@ class WhiteNoiseBlock:
                 "inverse-gamma shape and scale must be finite and positive"
             )
         self.name, self.shape, self.scale = name, shape, scale
+
+    def _require_alone(self, covariance: Covariance | None) -> None:
+        if covariance is not None:
+            raise ValueError(
+                "WhiteNoiseBlock models the whole noise; "
+                "register it as the only noise block"
+            )
 
     def _render(self, conditional_residual: L1Data, variance: float) -> BlockState:
         if conditional_residual.data_domain != "time":
@@ -129,6 +141,7 @@ class WhiteNoiseBlock:
         rng: np.random.Generator,
     ) -> BlockState:
         """Draw the variance from its inverse-gamma prior and publish it."""
+        self._require_alone(covariance)
         return self._render(
             conditional_residual, float(self.scale / rng.gamma(self.shape))
         )
@@ -141,6 +154,7 @@ class WhiteNoiseBlock:
         *,
         rng: np.random.Generator,
     ) -> BlockState:
+        self._require_alone(covariance)
         if conditional_residual.data_domain != "time":
             raise ValueError("WhiteNoiseBlock requires time-domain data")
         # The noise block sees observations minus every signal contribution.
