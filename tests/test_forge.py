@@ -680,3 +680,23 @@ def test_wheel_notebook_runs_on_the_simulated_file(
     )
     assert "posterior amplitude:" in out, out
     assert "residual rms after the run" in out, out
+
+
+# ---- the real file -------------------------------------------------------------
+
+REAL_FILE = os.environ.get("ENCHILADA_MOJITO_L1")
+
+
+@pytest.mark.skipif(not REAL_FILE, reason="set ENCHILADA_MOJITO_L1 to a Mojito L1 file")
+def test_forge_loads_an_hour_of_the_real_file(forge_data, forge_block):
+    residual = forge_data.load_window(
+        REAL_FILE, factor=10, duration_s=3600.0, domain="frequency", channels=("A", "E")
+    )
+    assert residual.num_time_samples == 1440
+    assert residual.sample_rate_hz == 0.4
+    covariance = forge_data.analytic_covariance(residual, forge_data.white_psd(2e-36))
+    start = forge_block.ForgeBlock().initial_sample(
+        residual, covariance, rng=np.random.default_rng(0)
+    )
+    for name in ("A", "E"):
+        assert start.template[name].shape == residual.channel_data[name].shape
