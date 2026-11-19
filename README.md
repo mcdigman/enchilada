@@ -20,7 +20,7 @@ receives, and the block's accepted physical state, then validates and records
 the returned estimate.
 Waveforms, likelihoods, and prior/conditional sampling remain model code.
 
-![The enchilada Wheel: blocks take turns around a hub that owns the data, residual, covariance, and ledger](docs/wheel.svg)
+![The enchilada Wheel: blocks take turns around a hub that owns the data, residual, sum of noise covariances, and ledger](docs/wheel.svg)
 
 *Blocks take turns clockwise, in registration order. enchilada owns the hub, the
 spokes, and the translation ring; everything on the ring is model code.*
@@ -207,7 +207,7 @@ A `BlockState` publishes exactly three fields:
 
 Each return replaces the block's previous published snapshot. A missing template
 removes any signal that block previously published. A zero-source or diagnostic
-block can return `BlockState()`;
+signal block can return `BlockState()`;
 `conditional_residual.zero_block_state(parameters=...)` constructs explicit zero
 arrays when they are useful.
 
@@ -462,8 +462,8 @@ step behind, at odd ones (`domania.wilson.grid.cells(Nf, Nt)` lists each
 slot's band and time). `L1Data` derives its read-only `wdm_grid` metadata from
 this coefficient layout. It is a frozen `WDMGrid` for WDM data and `None` for
 time or frequency data; copies preserve the grid. Choose division counts
-through `transform` or `Wheel.add(data_domain="wdm", ...)`, rather than
-passing `wdm_grid` to `L1Data`.
+through `transform` or `Wheel.add(block, role=..., data_domain="wdm", ...)`,
+rather than passing `wdm_grid` to `L1Data`.
 
 Time/Fourier transforms are plain NumPy FFTs. WDM conversions go through
 [domania](https://pypi.org/project/domania/), a core dependency, so a plain

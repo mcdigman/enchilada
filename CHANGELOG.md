@@ -90,14 +90,15 @@ All notable changes to enchilada are documented here. The format follows
   start draws from `rng`, and a block registered on another grid than the
   current covariance is refused at `add`, before `initial_sample` is called.
   Under `check_block`, construct the block with its start.
-- **Breaking:** `Wheel.add` requires the `role` keyword; the single covariance
-  owner is gone. Wheel holds the noise sum on the grid of the first noise
-  publication and hands a deep copy to blocks registered on that grid. A noise
-  block on another grid is refused at `add`, before its `initial_sample`, with
-  `ValueError` ("a covariance does not add across grids"); a signal block on
-  another grid is refused at `add` or `run` as before; a covariance a noise
-  block returns on another grid than its own is refused at `add` or `run`. A
-  joint signal-and-noise model becomes two blocks, one per role.
+- **Breaking:** `Wheel.add` and `check_block` require the `role` keyword; the
+  single covariance owner is gone. Wheel holds the noise sum on the grid of the
+  first noise publication and hands a deep copy to blocks registered on that
+  grid. A noise block on another grid is refused at `add`, before its
+  `initial_sample`, with `ValueError` ("a covariance does not add across
+  grids"); a signal block on another grid is refused at `add` or `run` as
+  before; a covariance a noise block returns on another grid than its own is
+  refused at `add` or `run`. A joint signal-and-noise model becomes two blocks,
+  one per role.
 - The tutorial's `WhiteNoiseVarianceBlock` and `examples/toy_fit.py`'s
   `WhiteNoiseBlock` model the whole noise and refuse to run beside another
   noise block.
@@ -134,6 +135,8 @@ All notable changes to enchilada are documented here. The format follows
   add, and each republishes into its own slot of the sum.
 - `L1Data.zero_block_state(covariance=...)`: a zero template plus a covariance
   is refused for either role; a noise block returns `BlockState(covariance=...)`.
+- `check_block(initial_covariance=...)`: pass
+  `noise_blocks=(FixedNoiseBlock(name, covariance),)` instead.
 
 ## [0.3.0] — Unreleased
 
