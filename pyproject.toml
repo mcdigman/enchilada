@@ -119,8 +119,6 @@ line-length = 88
 src = ["src", "tests", "examples", "benchmarks"]
 output-prefer-rule-codes = true
 
-# Don't automatically remove unused variables without human review
-unfixable = ["F841"]
 
 [tool.ruff.lint]
 # E5 = line length
@@ -130,6 +128,9 @@ select = ["E", "F", "I", "B", "UP", "S", "ANN", "TC", "FBT", "B", "YTT", "ASYNC"
 
 # The project uses many assertions
 ignore = ["S101"]
+
+# Don't automatically remove unused variables without human review
+unfixable = ["F841"]
 
 [tool.ruff.lint.per-file-ignores]
 # Notebooks group imports per cell rather than in one sorted block (I001) and
