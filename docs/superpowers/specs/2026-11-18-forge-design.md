@@ -283,9 +283,10 @@ Cells, in order; code cells print one line each so the test can assert on them:
    `block = ForgeBlock(name="forge", frequency_hz=...)`;
    `wheel.add(block, data_domain=DOMAIN)`; prints the data's RMS first; a
    commented second `wheel.add(..., data_domain=DOMAIN)` slot on the
-   covariance's grid, with the note that a block on another grid needs a
-   noise block publishing there (a covariance does not translate between
-   grids); prints the residual RMS after the start.
+   covariance's grid, with the note that every block receives the
+   campaign's one covariance and so registers on its grid (a covariance does
+   not translate between grids; another grid means moving `DOMAIN` for the
+   whole campaign); prints the residual RMS after the start.
 4. Code: `chain = []`; `on_cycle_complete` appends a copy of
    `wheel.ledger[block.name].parameters`; `wheel.run(200, on_cycle_complete=...)`;
    drops the first `WARM_UP` cycles (0: the placeholder draws the posterior
@@ -354,8 +355,9 @@ Skip-safe: `pytest.importorskip("h5py", reason=...)` at module level, like
   code cells run in a subprocess with the fixture's environment,
   `MPLBACKEND=Agg`, a session-scoped `MPLCONFIGDIR` and `cwd=forge/`, with
   `%`-magics stripped and each cell compiled under its id so a traceback
-  names the cell, once with matplotlib and once with it blocked through
-  `sys.modules`; the block notebook's stdout contains `check_block passed`,
+  names the cell, once with matplotlib (skipped when it is absent) and once
+  with it blocked through `sys.modules`; the block notebook's stdout
+  contains `check_block passed`,
   the wheel notebook's contains `posterior amplitude:`.
 - Real file: `@pytest.mark.skipif(not os.environ.get("ENCHILADA_MOJITO_L1"))`;
   `load_window(real, factor=10, duration_s=3600.0, domain="frequency", channels=("A", "E"))`,

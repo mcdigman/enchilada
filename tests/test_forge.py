@@ -630,6 +630,8 @@ def matplotlib_config_dir(tmp_path_factory):
 def run_notebook(name, config_dir, *, with_matplotlib):
     """Run a notebook's code cells in one process, each compiled under its cell
     id so a traceback names the cell; with matplotlib blocked when asked."""
+    if with_matplotlib:
+        pytest.importorskip("matplotlib")
     code = "" if with_matplotlib else "import sys\nsys.modules['matplotlib'] = None\n"
     code += "".join(
         f"exec(compile({cell_code(cell)!r}, {cell['id']!r}, 'exec'))\n"
