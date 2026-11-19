@@ -61,3 +61,29 @@ def test_the_excess_block_reads_the_floor_it_is_handed(noise_floor):
         block.initial_sample(observed, None, rng=rng)
     with pytest.raises(ValueError, match="time-domain"):
         block.sample(observed.to_frequency(), None, start, rng=rng)
+
+
+def test_a_different_floor_moves_the_excess_posterior(noise_floor):
+    from enchilada import Covariance, FixedNoiseBlock, Wheel
+
+    # The data have total variance 1.0 (floor 0.25 + excess 0.75). A floor of
+    # 0.5 must leave an excess of 0.5, so the block has to read the floor it is
+    # handed rather than assume the example's own 0.25.
+    observed = noise_floor.make_observed(seed=0)
+    floor = Covariance.like(
+        observed, {ch: np.full(observed.N, 0.5) for ch in observed.channel_names}
+    )
+    wheel = Wheel(observed, random_seed=0)
+    wheel.add(FixedNoiseBlock("floor", floor), role="noise")
+    wheel.add(noise_floor.ExcessNoiseBlock("excess"), role="noise")
+    chain: list[float] = []
+    wheel.run(
+        200,
+        on_cycle_complete=lambda cycle, w: chain.append(
+            w.ledger["excess"].parameters["variance"]
+        ),
+    )
+    samples = np.asarray(chain[50:])
+    mean, std = float(samples.mean()), float(samples.std())
+    assert mean == pytest.approx(0.5, abs=max(5 * std, 0.05)), (mean, std)
+    assert abs(mean - noise_floor.TRUTH["excess"]) >= 0.1, (mean, std)
