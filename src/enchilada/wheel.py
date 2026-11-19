@@ -37,8 +37,10 @@ class Wheel:
     covariance access returns copies. The ledger property returns a live handle;
     indexing and snapshot() copy its contents. Treat orbit resources as immutable.
 
-    Registration requires and adopts an explicit initial_block_state. It never
-    calls model initialization or consumes random draws.
+    Registration calls the block's `initial_sample` with the residual of the
+    blocks registered so far on the block's grid, the covariance when the
+    campaign has one, and the campaign RNG, then adopts the returned state
+    like a `sample` return.
     Each cycle calls sample with those inputs and the current_block_state from
     the ledger. Sampling receives the supplied RNG and independent input snapshots.
     Failed calls/validation/copying leave the ledger and Wheel RNG unchanged.
@@ -53,10 +55,11 @@ class Wheel:
     covariance stays on the grid its owner published it on. A block registered
     with data_domain has its inputs and returned signal translated; it receives
     the covariance only when registered on the covariance's grid, and a block on
-    another grid is refused at run with ValueError naming both grids. The block
-    that owns the current covariance must return it on every call, on the grid
-    of the data it received; other blocks can omit covariance without changing
-    it. Delivering a noise model to a block on another grid is a separate layer.
+    another grid is refused at add or run with ValueError naming both grids. The
+    block that owns the current covariance must return it on every call, on the
+    grid of the data it received; other blocks can omit covariance without
+    changing it. Delivering a noise model to a block on another grid is a
+    separate layer.
     """
 
     def __init__(
@@ -155,26 +158,32 @@ class Wheel:
         self,
         block_to_register: Block,
         *,
-        initial_block_state: BlockState,
         data_domain: str | None = None,
         num_frequency_divisions: int | None = None,
         num_time_divisions: int | None = None,
     ) -> None:
-        """Register a block from a complete, explicitly prepared starting state.
+        """Register a block and adopt the start its initial_sample returns.
 
-        block_to_register must have a unique name and implement sample.
-        Failed registration leaves the campaign unchanged.
+        block_to_register must have a unique name and implement initial_sample
+        and sample. Failed registration leaves the campaign unchanged: an
+        exception from initial_sample, a return that is not a BlockState, an
+        off-grid or non-finite template, a covariance on another grid than the
+        block's, or a state that cannot be deep-copied leaves the ledger, the
+        block list, the residual and the Wheel RNG as they were.
 
-        initial_block_state supplies a starting template, covariance, and physical
-        parameters, for example at an injected signal. Sampler continuation state
-        is managed inside the block.
-        Wheel copies and validates it without calling an initialization method or
-        consuming random draws. The state is required and cannot be None.
-        Its signal uses the selected block domain/grid, or the observation grid when no
-        data_domain is selected. A seed covariance must be on the block's grid,
-        like its template; it is adopted and held there.
-        The caller must keep published estimates and block-local state consistent.
-        This sets the starting state only; sample still runs normally.
+        initial_sample receives the current working residual (the observations
+        minus the adopted starts of every block registered so far) on this
+        block's grid, the current covariance (None until the constructor or a
+        block supplies one; a covariance on another grid than this block's is
+        refused here with ValueError) and a copy of the campaign RNG that is
+        committed with the state. Blocks therefore start in registration order:
+        register a noise block before the blocks whose starts need its
+        covariance. The returned state is validated and adopted exactly like a
+        sample return: its template must be on this block's grid, and Wheel
+        translates it to the observation grid for storage. A covariance in the
+        start makes this block the covariance owner. A block that must start at
+        a chosen point takes that point in its constructor and returns it from
+        initial_sample.
 
         data_domain selects time, frequency or wdm for this block's residual,
         current state and published covariance. None keeps the observation grid.
@@ -182,8 +191,6 @@ class Wheel:
         observation length. Both counts must be even. An existing observation
         WDM grid is reused if neither count is supplied.
         """
-        if not isinstance(initial_block_state, BlockState):
-            raise TypeError("initial_block_state must be a BlockState")
         observed = self._observed_data
         if data_domain is None:
             if num_frequency_divisions is not None or num_time_divisions is not None:
@@ -212,39 +219,47 @@ class Wheel:
         if not callable(getattr(block_to_register, "sample", None)):
             raise TypeError(
                 f"block {block_name!r} does not implement sample; "
-                "a Block needs name and sample(conditional_residual, "
+                "a Block needs name, initial_sample(conditional_residual, "
+                "covariance, *, rng) and sample(conditional_residual, "
                 "covariance, current_block_state, *, rng)."
             )
-        new_block_state: object = initial_block_state
-        if block_grid != observed.grid and initial_block_state.template is not None:
-            # Only the seed's grid is needed. Transforming observation
-            # values here wastes work and can overflow independently of it.
-            source_reference = replace(
-                observed,
-                channel_data=initial_block_state.template,
-                data_domain=block_grid.data_domain,
+        if not callable(getattr(block_to_register, "initial_sample", None)):
+            raise TypeError(
+                f"block {block_name!r} does not implement initial_sample; "
+                "a Block needs name, initial_sample(conditional_residual, "
+                "covariance, *, rng) and sample(conditional_residual, "
+                "covariance, current_block_state, *, rng)."
             )
-            check_on_grid(
-                initial_block_state.template,
-                channel_names=observed.channel_names,
-                num_time_samples=observed.num_time_samples,
-                data_domain=block_grid.data_domain,
-                wdm_grid=block_grid.wdm_grid,
-                context_label="initial_block_state.template",
+        conditional_residual, covariance = self._block_inputs(
+            block_name, block_grid, registered=False
+        )
+        candidate_rng = deepcopy(self._rng)
+        new_block_state: object = block_to_register.initial_sample(
+            conditional_residual=conditional_residual,
+            covariance=covariance,
+            rng=candidate_rng,
+        )
+        if block_grid != observed.grid:
+            new_block_state = self._canonical_state(
+                new_block_state, conditional_residual
             )
-            new_block_state = self._canonical_state(new_block_state, source_reference)
         self._adopt(
             block_name,
             new_block_state,
-            "initial_block_state",
-            self._rng,
+            "initial_sample",
+            candidate_rng,
             block_to_register=block_to_register,
             block_grid=block_grid,
         )
 
-    def _block_inputs(self, block_name: str) -> tuple[L1Data, Covariance | None]:
-        """Conditional residual on the block's grid, and the covariance when on it."""
-        block_grid = self._block_domains[block_name]
+    def _block_inputs(
+        self, block_name: str, block_grid: Grid, *, registered: bool
+    ) -> tuple[L1Data, Covariance | None]:
+        """Conditional residual on the block's grid, and the covariance when on it.
+
+        A registered block's residual leaves its own signal in; a block being
+        registered has no signal yet, so it receives the working residual.
+        """
         if self._covariance is not None and self._covariance.grid != block_grid:
             raise ValueError(
                 f"block {block_name!r} is registered on grid {block_grid} but the "
@@ -253,7 +268,11 @@ class Wheel:
                 "on the covariance's grid, or have the noise block publish on the "
                 "block's grid."
             )
-        conditional_residual = self.residual(exclude_block_name=block_name)
+        conditional_residual = (
+            self.residual(exclude_block_name=block_name)
+            if registered
+            else self.working_residual
+        )
         if block_grid != self._observed_data.grid:
             conditional_residual = transform(
                 conditional_residual,
@@ -308,7 +327,9 @@ class Wheel:
             for block_name, block in self._blocks:
                 candidate_rng = deepcopy(self._rng)
                 block_grid = self._block_domains[block_name]
-                conditional_residual, covariance = self._block_inputs(block_name)
+                conditional_residual, covariance = self._block_inputs(
+                    block_name, block_grid, registered=True
+                )
                 current_block_state = self._ledger[block_name]
                 translated = block_grid != self._observed_data.grid
                 if translated:
@@ -398,7 +419,8 @@ class Wheel:
     ) -> None:
         """Validate a candidate state and RNG before committing campaign state.
 
-        source_method_name identifies the block call or initial state in diagnostics.
+        source_method_name names the block method whose return is being adopted,
+        for diagnostics.
         block_to_register is supplied only when adopting a new block's initial state.
         block_grid is the grid the block is registered on; a published covariance
         must be on it.

@@ -46,11 +46,9 @@ noise = Covariance.like(r, {"A": np.ones(8)})
 assert_type(noise.copy(), Covariance)
 assert_type(transform(BlockState(), "time"), BlockState)
 wheel = Wheel(r, noise)
-initial = BlockState()
-wheel.add(EchoBlock("wdm"), initial_block_state=initial,
-          data_domain="wdm", num_time_divisions=2)
-wheel.add(EchoBlock("seeded"), initial_block_state=initial)
-check_block(EchoBlock("checked"), r, initial_block_state=initial)
+wheel.add(EchoBlock("wdm"), data_domain="wdm", num_time_divisions=2)
+wheel.add(EchoBlock("plain"))
+check_block(EchoBlock("checked"), r)
 
 class SampleOnly:
     name = "sample_only"
@@ -62,13 +60,17 @@ class SampleOnly:
     ) -> BlockState:
         return current_block_state
 
-sample_only: Block = SampleOnly()
-wheel.add(sample_only, initial_block_state=BlockState())
-check_block(sample_only, r, initial_block_state=BlockState())
+sample_only: Block = SampleOnly()   # no initial_sample: not a Block
 
 @dataclass(frozen=True)
 class FrozenBlock:
     name: str = "frozen"
+
+    def initial_sample(
+        self, conditional_residual: L1Data,
+        covariance: Covariance | None, *, rng: np.random.Generator,
+    ) -> BlockState:
+        return BlockState()
 
     def sample(
         self, conditional_residual: L1Data,
@@ -78,12 +80,18 @@ class FrozenBlock:
         return current_block_state
 
 frozen: Block = FrozenBlock()
-wheel.add(FrozenBlock(), initial_block_state=BlockState())
-check_block(FrozenBlock(), r, initial_block_state=BlockState())
+wheel.add(FrozenBlock())
+check_block(FrozenBlock(), r)
 
 @dataclass(frozen=True)
 class ExplicitBlock(Block):
     name: str
+
+    def initial_sample(
+        self, conditional_residual: L1Data,
+        covariance: Covariance | None, *, rng: np.random.Generator,
+    ) -> BlockState:
+        return BlockState()
 
     def sample(
         self, conditional_residual: L1Data,
@@ -93,7 +101,7 @@ class ExplicitBlock(Block):
         return current_block_state
 
 explicit: Block = ExplicitBlock("explicit")
-wheel.add(explicit, initial_block_state=BlockState())
+wheel.add(explicit)
 """
 
 
@@ -115,7 +123,12 @@ def test_consumer_typos_are_static_errors(tmp_path):
     # exactly the two typos -- the correct `r.Tobs` on the preceding line must
     # not be flagged (an over-broad ban would break legitimate access)
     assert out.count("[attr-defined]") == 2, out
-    assert out.count("error:") == 2, out
+    # ... and a class without initial_sample is not a Block
+    assert (
+        'Incompatible types in assignment (expression has type "SampleOnly", '
+        'variable has type "Block")'
+    ) in out, out
+    assert out.count("error:") == 3, out
 
 
 @pytest.mark.skipif(
@@ -189,6 +202,14 @@ def test_block_protocol_is_runtime_checkable():
 
     assert not isinstance(NotABlock(), Block)
 
+    class SampleOnly:
+        name = "s"
+
+        def sample(self, conditional_residual, covariance, current_block_state, *, rng):
+            return current_block_state
+
+    assert not isinstance(SampleOnly(), Block)
+
 
 def test_frozen_dataclass_can_explicitly_inherit_block():
     from dataclasses import dataclass
@@ -200,6 +221,9 @@ def test_frozen_dataclass_can_explicitly_inherit_block():
     @dataclass(frozen=True)
     class ExplicitBlock(Block):
         name: str
+
+        def initial_sample(self, conditional_residual, covariance, *, rng):
+            return BlockState(parameters={"value": 1})
 
         def sample(self, conditional_residual, covariance, current_block_state, *, rng):
             return current_block_state
@@ -214,7 +238,7 @@ def test_frozen_dataclass_can_explicitly_inherit_block():
         physical_observable="strain",
     )
     wheel = Wheel(observations)
-    wheel.add(block, initial_block_state=BlockState(parameters={"value": 1}))
+    wheel.add(block)
     wheel.run(1)
     assert wheel.ledger["explicit"].parameters == {"value": 1}
 

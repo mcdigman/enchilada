@@ -28,25 +28,11 @@ def test_toy_time_blocks_preserve_draws_on_translated_observations(
     chains = []
     wheels = []
     for observed in (data, translated_data):
-        initialization_rng = np.random.default_rng(42)
         wheel = Wheel(observed, random_seed=42)
         for name, frequency in (("slow", 0.004), ("fast", 0.011)):
-            block = toy.SineBlock(name, frequency)
-            wheel.add(
-                block,
-                initial_block_state=toy.draw_sine_prior(
-                    block, data, rng=initialization_rng
-                ),
-                data_domain="time",
-            )
+            wheel.add(toy.SineBlock(name, frequency), data_domain="time")
         noise_block = toy.WhiteNoiseBlock("noise")
-        wheel.add(
-            noise_block,
-            initial_block_state=toy.draw_white_noise_prior(
-                noise_block, data, rng=initialization_rng
-            ),
-            data_domain="time",
-        )
+        wheel.add(noise_block, data_domain="time")
         chain = []
 
         def collect(cycle, campaign, samples=chain):

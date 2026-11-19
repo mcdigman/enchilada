@@ -14,9 +14,10 @@ from enchilada.data import L1Data
 class EchoBlock:
     """Zero-signal diagnostic block that prints residual RMS and advances a counter.
 
-    Register with ``BlockState()`` and inspect ``block.state.num_sample_calls``
-    for the counter. Diagnostics belong to ``block.state.metadata``. Each call
-    publishes an empty physical state. Use a separate instance per campaign.
+    Register with ``wheel.add(block)``: ``initial_sample`` publishes an empty
+    state, and every ``sample`` call does the same after printing. Inspect
+    ``block.state.num_sample_calls`` for the counter; diagnostics belong to
+    ``block.state.metadata``. Use a separate instance per campaign.
     """
 
     @dataclass
@@ -29,6 +30,16 @@ class EchoBlock:
     def __init__(self, name: str) -> None:
         self.name = name
         self.state = self.State()
+
+    def initial_sample(
+        self,
+        conditional_residual: L1Data,
+        covariance: Covariance | None,
+        *,
+        rng: np.random.Generator,
+    ) -> BlockState:
+        """Publish an empty physical state; the counter and the RNG are untouched."""
+        return BlockState()
 
     def sample(
         self,
@@ -61,31 +72,33 @@ def check_block(
     observed_data: L1Data,
     num_cycles: int = 2,
     *,
-    initial_block_state: BlockState,
     initial_covariance: Covariance | None = None,
     random_seed: int | None = 0,
 ) -> None:
     """Run a block on a scratch Wheel and validate each returned BlockState.
 
-    Adopts the required ``initial_block_state``, then calls ``sample`` for
-    ``num_cycles``, passing accepted state into each call. Wheel validates the
-    signal grid and any published Covariance.
+    Registers the block, which calls its ``initial_sample`` on the observation
+    grid, then calls ``sample`` for ``num_cycles``, passing accepted state into
+    each call. Wheel validates the start and every sample alike: the signal
+    grid, finiteness and any published Covariance.
 
     Args:
         block_under_test: Configured block whose exchange contract is checked.
+            A block that must start at a chosen point is constructed with it.
         observed_data: L1 observations and shared run settings for the scratch run.
-        num_cycles: Number of sampling cycles after initialization; defaults to 2.
-        initial_block_state: Required starting physical estimates on the observation
-            grid. Initialize any sampler continuation state on the block itself.
+        num_cycles: Number of sampling cycles after registration; defaults to 2.
         initial_covariance: Starting Covariance for the scratch Wheel. None
             leaves it unset until a block supplies it.
-        random_seed: Seed for the scratch Wheel's NumPy generator. Defaults to
-            0 for reproducibility; None requests nondeterministic initialization.
+        random_seed: Seed for the scratch Wheel's NumPy generator, which also
+            drives ``initial_sample``. Defaults to 0 for reproducibility; None
+            requests nondeterministic initialization.
 
     This advances the supplied block's local state. It checks the exchange
     contract, not statistical correctness or block-local failure recovery.
     Test posterior recovery and independent campaigns separately;
-    ``examples/toy_fit.py`` provides a pattern.
+    ``examples/toy_fit.py`` provides a pattern. ``check_block`` does not select
+    a separate block domain: ``initial_sample`` and ``sample`` receive
+    ``observed_data``'s grid.
     """
     from enchilada.wheel import Wheel
 
@@ -94,8 +107,5 @@ def check_block(
         initial_covariance=initial_covariance,
         random_seed=random_seed,
     )
-    wheel.add(
-        block_to_register=block_under_test,
-        initial_block_state=initial_block_state,
-    )
+    wheel.add(block_to_register=block_under_test)
     wheel.run(num_cycles=num_cycles)

@@ -25,6 +25,12 @@ All notable changes to enchilada are documented here. The format follows
   (`fit_window`), loads and decimates it, translates it to WDM and serves a
   diagnostic block on that grid; the Wheel side of the Mojito story.
 - Optional extra `mojito` (h5py) for loading data without lisaorbits.
+- `Block.initial_sample(conditional_residual, covariance, *, rng)`: every
+  block draws or constructs its own start. `Wheel.add` calls it once with the
+  observations minus the starts of the blocks registered so far, on the
+  block's grid, the current covariance and the campaign RNG, and adopts the
+  result through the same validation as a `sample` return; a block without it
+  is refused with `TypeError`. `EchoBlock` publishes an empty start.
 
 ### Changed
 
@@ -55,12 +61,22 @@ All notable changes to enchilada are documented here. The format follows
 - **Breaking:** `check_compatible` checks only channel order and grid equality;
   its shape, real/complex kind and positivity checks moved into the
   constructor.
+- **Breaking:** `Wheel.add(initial_block_state=...)` and
+  `check_block(initial_block_state=...)` are gone; a chosen start (an
+  injection, a checkpoint) is block configuration rendered by
+  `initial_sample`, and the example prior helpers (`draw_sine_prior`,
+  `draw_white_noise_prior`, `draw_gb_prior`) became the blocks'
+  `initial_sample`. Registration now consumes campaign RNG draws when the
+  start draws from `rng`, and a block registered on another grid than the
+  current covariance is refused at `add`, before `initial_sample` is called.
+  Under `check_block`, construct the block with its start.
 - `Wheel(initial_covariance=...)` accepts a covariance on any grid of the same
   record (same sample count and sample rate), not only the observation grid.
 - Wheel holds one covariance on the grid its owner published it on and hands a
   deep copy to blocks registered on that grid. A block on another grid is
-  refused at `run` with `ValueError` naming both grids; a seed or returned
-  covariance on another grid than its block's is refused at `add` or `run`.
+  refused at `add` or `run` with `ValueError` naming both grids; a start or
+  returned covariance on another grid than its block's is refused at `add` or
+  `run`.
 - `transform` takes `L1Data` or `BlockState` only; a `BlockState` carries its
   covariance through unchanged.
 - The examples and notebooks build covariances with `like` from the convention

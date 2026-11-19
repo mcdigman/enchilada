@@ -52,7 +52,7 @@ def make_block(model):
     )
 
 
-def test_gb_prior_keeps_continuation_on_its_block(gb_model, spectral_context):
+def test_gb_start_keeps_continuation_on_its_block(gb_model, spectral_context):
     from dataclasses import fields
 
     block = make_block(gb_model)
@@ -60,7 +60,7 @@ def test_gb_prior_keeps_continuation_on_its_block(gb_model, spectral_context):
     assert hasattr(block, "state")
     assert block.state is not other.state
     data, noise = spectral_context
-    published = gb_model.draw_gb_prior(block, data, noise, rng=np.random.default_rng(0))
+    published = block.initial_sample(data, noise, rng=np.random.default_rng(0))
     assert {field.name for field in fields(published)} == {
         "template",
         "covariance",
@@ -80,8 +80,8 @@ def test_gb_requires_a_frequency_covariance_on_the_data_grid(
     with pytest.raises(
         ValueError, match="frequency-domain covariance on the data grid"
     ):
-        gb_model.draw_gb_prior(
-            make_block(gb_model), data, time_noise, rng=np.random.default_rng(0)
+        make_block(gb_model).initial_sample(
+            data, time_noise, rng=np.random.default_rng(0)
         )
 
 
@@ -101,9 +101,7 @@ def test_gb_rejects_covariance_on_a_different_grid(gb_model, spectral_context):
     with pytest.raises(
         ValueError, match="frequency-domain covariance on the data grid"
     ):
-        gb_model.draw_gb_prior(
-            make_block(gb_model), data, noise, rng=np.random.default_rng(0)
-        )
+        make_block(gb_model).initial_sample(data, noise, rng=np.random.default_rng(0))
 
 
 def test_gb_context_requires_independent_channels_and_returns_psd_units(gb_model):
@@ -139,18 +137,20 @@ def test_gb_frequency_registration_reads_its_native_frequency_covariance(
         random_seed=0,
     )
     block = make_block(gb_model)
-    initial = gb_model.draw_gb_prior(block, data, noise, rng=np.random.default_rng(0))
 
     class ContextProbe:
         """Check the GB likelihood inputs without requiring optional Eryn."""
 
         name = block.name
 
+        def initial_sample(self, conditional_residual, covariance, *, rng):
+            return block.initial_sample(conditional_residual, covariance, rng=rng)
+
         def sample(self, conditional_residual, covariance, current_block_state, *, rng):
             block._context(conditional_residual, covariance)
             return current_block_state
 
-    wheel.add(ContextProbe(), initial_block_state=initial, data_domain="frequency")
+    wheel.add(ContextProbe(), data_domain="frequency")
     wheel.run(1)
     assert wheel.covariance.grid == data.grid
     result = wheel.ledger["gb"]

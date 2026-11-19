@@ -84,18 +84,18 @@ def test_tutorial_sampler_refreshes_target_when_other_blocks_change_it(
     block = module.SineAmplitudeBlock(
         name="signal", frequency_hz=0.125, proposal_std=0.4, steps_per_call=20
     )
-    initial_result = block._render(data, 0.0)
+    start = block._render(data, 0.0)
     # Identical continuation state and RNG, but the other blocks change the
     # conditional data and covariance. A cached old target would repeat a draw.
-    positive = block.sample(data, noise, initial_result, rng=np.random.default_rng(1))
+    positive = block.sample(data, noise, start, rng=np.random.default_rng(1))
     changed_data = replace(data, channel_data={"A": -2.0 * basis})
     changed_noise = white_covariance(changed_data, 0.4)
     negative = block.sample(
-        changed_data, changed_noise, initial_result, rng=np.random.default_rng(1)
+        changed_data, changed_noise, start, rng=np.random.default_rng(1)
     )
     assert positive.parameters["amplitude"] > 0
     assert negative.parameters["amplitude"] < 0
-    assert initial_result.parameters == {"amplitude": 0.0}
+    assert start.parameters == {"amplitude": 0.0}
     assert block.state.num_proposals == 2 * block.steps_per_call
 
 
@@ -118,10 +118,10 @@ def test_tutorial_rejection_returns_retained_signal_and_complete_state(
     block = tutorial_definitions.SineAmplitudeBlock(
         name="signal", frequency_hz=0.125, proposal_std=1e12, steps_per_call=8
     )
-    initial_result = block._render(data, 0.0)
-    result = block.sample(data, noise, initial_result, rng=np.random.default_rng(1))
-    assert result.parameters == initial_result.parameters
-    np.testing.assert_array_equal(result.template["A"], initial_result.template["A"])
+    start = block._render(data, 0.0)
+    result = block.sample(data, noise, start, rng=np.random.default_rng(1))
+    assert result.parameters == start.parameters
+    np.testing.assert_array_equal(result.template["A"], start.template["A"])
     assert block.state.num_proposals == 8
     assert block.state.num_acceptances == 0
     assert not hasattr(result, "sampler_state")
@@ -133,3 +133,36 @@ def test_tutorial_block_instances_keep_independent_diagnostics(tutorial_definiti
     first.state.num_proposals = 5
     assert second.state.num_proposals == 0
     assert first.state is not second.state
+
+
+def test_tutorial_blocks_draw_their_start_from_the_prior_when_unconfigured(
+    tutorial_definitions,
+):
+    import numpy as np
+
+    from enchilada import L1Data
+
+    data = L1Data(
+        channel_data={"A": np.zeros(64)},
+        channel_names=("A",),
+        sample_rate_hz=1.0,
+        tdi_generation="2.0",
+        physical_observable="fractional_frequency",
+    )
+    signal = tutorial_definitions.SineAmplitudeBlock(name="signal", frequency_hz=0.125)
+    noise = tutorial_definitions.WhiteNoiseVarianceBlock()
+
+    def starts(block, key):
+        draws = []
+        for seed in (0, 0, 1):
+            start = block.initial_sample(data, None, rng=np.random.default_rng(seed))
+            draws.append(start.parameters[key])
+        return draws
+
+    # Without a configured start, the start is a prior draw from the given RNG.
+    amplitudes = starts(signal, "amplitude")
+    variances = starts(noise, "variance")
+    for same_a, same_b, other in (amplitudes, variances):
+        assert same_a == same_b
+        assert same_a != other
+    assert min(variances) > 0

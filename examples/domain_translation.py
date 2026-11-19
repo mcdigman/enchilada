@@ -39,6 +39,10 @@ class DomainEcho:
         if covariance is not None:
             raise ValueError(f"{self.name}: expected no covariance in this walkthrough")
 
+    def initial_sample(self, conditional_residual, covariance, *, rng):
+        self._check_input(conditional_residual, covariance)
+        return BlockState()
+
     def sample(self, conditional_residual, covariance, current_block_state, *, rng):
         self._check_input(conditional_residual, covariance)
         self.state.num_sample_calls += 1
@@ -80,16 +84,10 @@ def run_example():
     wheel = Wheel(observed, random_seed=3)
     blocks = {}
     for domain in ("time", "frequency", "wdm"):
-        initial = BlockState()
         block = DomainEcho(domain, domain)
         blocks[domain] = block
         options = {"num_frequency_divisions": 8} if domain == "wdm" else {}
-        wheel.add(
-            block,
-            initial_block_state=initial,
-            data_domain=domain,
-            **options,
-        )
+        wheel.add(block, data_domain=domain, **options)
     wheel.run(num_cycles=2)
 
     return {
