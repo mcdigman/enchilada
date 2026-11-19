@@ -85,13 +85,16 @@ def load_window(
 - `domain="time"` or `"frequency"`: `duration_s` is required; the loaded
   window covers `duration_s` native seconds from `start_offset_s`, and a
   frequency window is `transform(decimated, "frequency")`.
-- `domain="wdm"`: both division counts are required and `num_time_divisions`
-  must be even; `duration_s` must be `None`. The native duration is derived
-  as `factor * num_frequency_divisions * num_time_divisions * dt`, with `dt`
-  read from a one-channel, one-minute probe load of the file, so the
-  decimated record has exactly `Nf * Nt` samples and
+- `domain="wdm"`: both division counts are required and must be positive
+  even integers (validated through `WDMGrid` before any file I/O);
+  `duration_s` must be `None`. The native duration is derived as
+  `factor * num_frequency_divisions * num_time_divisions * dt`, with `dt`
+  read from the file's `tdis/sampling` attribute (no samples are loaded, so
+  a flagged sample outside the window or a file shorter than a minute does
+  not matter), so the decimated record has exactly `Nf * Nt` samples and
   `transform(decimated, "wdm", num_frequency_divisions=Nf)` lands on the
-  requested grid. Any other `domain` raises `ValueError`.
+  requested grid. Any other `domain` raises `ValueError`; `factor` is
+  checked up front (an integer of at least 2, as `decimate` requires).
 - The 40 filter-transient samples at each end of a decimated record
   (`enchilada.resample.edge_samples`) are documented in the README, not
   trimmed.
@@ -114,7 +117,10 @@ def analytic_covariance(data: L1Data, psd) -> Covariance:
 
 `psd` is a callable `psd(f_hz) -> one-sided PSD` applied to every channel, or
 a mapping from channel name to callable; a mapping missing one of
-`data.channel_names` raises `ValueError`. Channels are independent (no cross
+`data.channel_names` raises `ValueError`. A callable may return one scalar
+(a white PSD written as a constant broadcasts); a non-finite or negative
+value, a result of another shape, or a zero variance anywhere on the grid
+raises `ValueError` naming the channel. Channels are independent (no cross
 terms). The result is `Covariance.like(data, {channel: array})`, so it is on
 `data`'s grid and validated by the constructor.
 
@@ -123,14 +129,18 @@ Per grid, with `N = data.num_time_samples`, `fs`, `df = data.df`, `Tobs`:
 - Frequency: bin `k` of the `N // 2 + 1` rfft bins sits at `f_k = k * df`
   and gets `(Tobs / 2) * S(max(f_k, df))`. The floor keeps `S(0)` out of the
   evaluation; it affects only the DC bin.
-- WDM: band spacing `dF = fs / (2 * Nf)`. Row `i >= 1` is band `i` at
-  `f = i * dF` for every column. Row 0 holds DC in its even columns and the
-  Nyquist band `Nf * dF = fs / 2` in its odd columns, as `WDMGrid` documents;
-  DC is evaluated at `dF`. Each cell gets `S(f) / 2`, the per-cell variance
-  domania's normalisation gives white noise (`white_covariance` in
-  `tests/conftest.py`: cell variance `sigma**2 / fs` with
-  `S = 2 sigma**2 / fs`). This treats the PSD as flat across one band; the
-  README says so.
+- WDM: band spacing `dF = fs / (2 * Nf)`. Row `i >= 1` is band `i` for every
+  column. Row 0 holds DC in its even columns and the Nyquist band
+  `Nf * dF = fs / 2` in its odd columns, as `WDMGrid` documents. Each cell
+  gets `S / 2` averaged across its band with the Meyer window's own weights,
+  through `domania.wdm_covariance` (exact for stationary noise; about 1 ms
+  for a day at 0.4 Hz), with `S` evaluated at `max(f, df)` as on the
+  frequency grid. For white noise this is the per-cell variance domania's
+  normalisation gives (`white_covariance` in `tests/conftest.py`: cell
+  variance `sigma**2 / fs` with `S = 2 sigma**2 / fs`). The band-centre
+  value `S(i * dF) / 2` was the first design; it is off by a factor of
+  about 200 at a TDI notch and by 0.4 on an `f**-4` wall (checked against
+  domania and a Monte Carlo), which is why the average is used.
 - Time: the PSD is evaluated at the rfft frequencies `max(k * df, df)`; if
   the values are not all equal (`np.allclose` to the first) the function
   raises `ValueError("a coloured PSD has no per-sample covariance on the time
@@ -271,17 +281,25 @@ Skip-safe: `pytest.importorskip("h5py", reason=...)` at module level, like
   the path.
 - `load_window`: a time window has `fs = native / factor` and the expected
   sample count; a frequency window is on the frequency grid with the same
-  record; a WDM window derives its duration and has
-  `wdm_grid.array_shape == (Nf, Nt)`; `duration_s` with `domain="wdm"`, a
-  missing `duration_s` with `domain="time"`, an odd `num_time_divisions`,
-  and an unknown domain each raise `ValueError`.
+  record; a WDM window derives its duration, has
+  `wdm_grid.array_shape == (Nf, Nt)` and equals the hand-run
+  `load_mojito_l1` → `decimate` → `transform` pipeline bit for bit; a WDM
+  window past a flagged sample and one on a file shorter than a minute both
+  load; `duration_s` with `domain="wdm"`, a missing `duration_s` with
+  `domain="time"`, an odd division count, and an unknown domain each raise
+  `ValueError`, and a bad `factor` is refused before any I/O.
 - `analytic_covariance`: on the frequency grid, bins equal
   `(Tobs / 2) * S(max(f_k, df))` for a known coloured callable; for
   `white_psd(2 * sigma**2 / fs)` the result equals conftest's
   `white_covariance(data, sigma**2)` on the time, frequency and WDM grids
   (`np.testing.assert_allclose` on the channel arrays), which pins the three
-  normalisations against each other; a coloured PSD on the time grid raises
-  with a message containing "frequency or WDM grid"; a per-channel mapping
+  normalisations against each other; on the WDM grid a steep red PSD gives
+  one value per band, strictly inside the PSD's range over the band's
+  support and falling with the band, and a PSD linear in `f` reproduces
+  its band-centre value on the interior bands; a constant-returning PSD
+  equals `white_psd` on every grid; a non-finite, negative, wrong-shaped or
+  zero-variance PSD raises; a coloured PSD on the time grid raises with a
+  message containing "frequency or WDM grid"; a per-channel mapping
   applies each callable to its channel and a mapping missing a channel raises.
 - `ForgeBlock`: `isinstance(ForgeBlock(), Block)`; `check_block` passes on
   the simulated frequency window with the white covariance; `_check_inputs`
@@ -319,8 +337,12 @@ is `src/enchilada`); the notebooks are never formatted.
   variables (`ENCHILADA_MOJITO_L1`, `FORGE_DURATION_S`, `FORGE_FACTOR`); how to
   copy the folder per block; what to replace and what to keep; caveats:
   white-only covariance on the time grid, the 40 transient samples at each
-  end of a decimated record, the PSD treated as flat within a WDM band, the
-  placeholder's white level is a stand-in for the simulation's PSD; a pointer
+  end of a decimated record, the anti-alias roll-off above 0.8 of the new
+  Nyquist frequency (a native PSD overstates the cells above it and the
+  white time-grid variance by about 12 %; WDM cells are band averages, so
+  notches are handled), the placeholder's white level is a stand-in for the
+  simulation's PSD (about 12 % below the in-band PSD for the same reason);
+  a pointer
   to `examples/create_block.ipynb` for the contract's reasoning.
 - Repository `README.md`: a short "Forge" paragraph after the block
   authoring section pointing at `forge/README.md`.
