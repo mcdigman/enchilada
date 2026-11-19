@@ -507,3 +507,78 @@ class TestCheckCompatible:
             cov.check_compatible(time_data(num_time_samples=16))
         with pytest.raises(ValueError, match="grid"):
             cov.check_compatible(time_data(sample_rate_hz=1.0))
+
+
+class TestAdd:
+    def test_sums_variances_and_cross_terms_on_one_grid(self):
+        data = time_data()
+        left = Covariance.like(
+            data, {"A": np.full(8, 1.0), "E": np.full(8, 2.0), "AE": np.full(8, 0.5)}
+        )
+        right = Covariance.like(data, {"A": np.full(8, 3.0), "E": np.full(8, 4.0)})
+        total = left + right
+        assert type(total) is Covariance
+        assert total.grid == data.grid
+        assert total.channel_names == ("A", "E")
+        np.testing.assert_array_equal(total.A, 4.0)
+        np.testing.assert_array_equal(total.E, 6.0)
+        np.testing.assert_array_equal(total.AE, 0.5)
+        np.testing.assert_array_equal(total.EA, 0.5)
+        assert not total.blocks.flags.writeable
+        assert not np.shares_memory(total.blocks, left.blocks)
+        assert not np.shares_memory(total.blocks, right.blocks)
+        np.testing.assert_array_equal(left.A, 1.0)  # the operands are untouched
+        np.testing.assert_array_equal(right.AE, 0.0)
+
+    def test_addition_is_commutative_and_promotes_to_complex(self):
+        data = frequency_data()  # 8 samples: 5 bins, DC and Nyquist real
+        real = Covariance.like(data, {"A": np.full(5, 1.0), "E": np.full(5, 1.0)})
+        cross = np.full(5, 0.25 + 0.1j)
+        cross[0] = cross[-1] = 0.25
+        with_cross = Covariance.like(
+            data, {"A": np.full(5, 2.0), "E": np.full(5, 2.0), "AE": cross}
+        )
+        total = real + with_cross
+        assert total.blocks.dtype == np.complex128
+        np.testing.assert_array_equal(total.A, 3.0)
+        np.testing.assert_array_equal(total.E, 3.0)
+        np.testing.assert_array_equal(total.AE, cross)
+        np.testing.assert_array_equal(total.EA, np.conj(cross))
+        np.testing.assert_array_equal((with_cross + real).blocks, total.blocks)
+
+    def test_the_sum_passes_the_constructor_checks(self):
+        # Each term is positive definite; the sum goes through the same Cholesky.
+        data = time_data()
+        tight = Covariance.like(
+            data, {"A": np.ones(8), "E": np.ones(8), "AE": np.full(8, 0.99)}
+        )
+        total = tight + tight
+        np.testing.assert_array_equal(total.A, 2.0)
+        np.testing.assert_array_equal(total.AE, 1.98)
+
+    def test_grids_must_match(self):
+        data = time_data()
+        left = white_covariance(data, 1.0)
+        with pytest.raises(ValueError, match="does not add across grids") as info:
+            left + white_covariance(data.to_frequency(), 1.0)
+        assert "data_domain='time'" in str(info.value)
+        assert "data_domain='frequency'" in str(info.value)
+        with pytest.raises(ValueError, match="does not add across grids"):
+            left + white_covariance(time_data(num_time_samples=4), 1.0)
+
+    def test_channel_order_must_match(self):
+        data = time_data()
+        reordered = replace(data, channel_names=("E", "A"))
+        with pytest.raises(ValueError, match=r"channel_names \('E', 'A'\)") as info:
+            white_covariance(data, 1.0) + white_covariance(reordered, 1.0)
+        assert "('A', 'E')" in str(info.value)
+
+    def test_other_operands_are_not_implemented(self):
+        cov = white_covariance(time_data(), 1.0)
+        assert cov.__add__(1.0) is NotImplemented
+        with pytest.raises(TypeError):
+            cov + 1.0
+        with pytest.raises(TypeError):
+            1.0 + cov
+        with pytest.raises(TypeError):
+            cov + None

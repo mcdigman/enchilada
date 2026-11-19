@@ -7,7 +7,7 @@ from dataclasses import replace
 
 import numpy as np
 
-from enchilada._signal_sum import Signal, SignalSum
+from enchilada._sum_tree import Signal, SignalSum
 from enchilada.block import Block
 from enchilada.block_state import BlockState, check_on_grid
 from enchilada.covariance import Covariance
