@@ -9,7 +9,7 @@ import pytest
 import enchilada
 import enchilada.wheel
 from conftest import const_block_state, white_covariance
-from enchilada import BlockState, Covariance, FixedNoiseBlock, Wheel
+from enchilada import BlockState, Covariance, FixedNoiseBlock, Wheel, transform
 from enchilada.testing import EchoBlock
 
 
@@ -133,6 +133,7 @@ def snapshot(wheel):
         "rng": wheel._rng.bit_generator.state,
         "signal_sum": wheel._signal_sum,
         "noise_sum": wheel._noise_sum,
+        "covariance_grid": wheel._covariance_grid,
         "ledger": {
             name: (
                 None if entry.template is None else entry.template["A"].copy(),
@@ -157,6 +158,7 @@ def assert_unchanged(wheel, before):
     assert after["rng"] == before["rng"]
     assert after["signal_sum"] is before["signal_sum"]
     assert after["noise_sum"] is before["noise_sum"]
+    assert after["covariance_grid"] == before["covariance_grid"]
     np.testing.assert_array_equal(after["residual"], before["residual"])
     _same_array(after["covariance"], before["covariance"])
     for name, (template, covariance, parameters) in before["ledger"].items():
@@ -392,6 +394,35 @@ class TestNoiseSum:
         wheel.add(WhiteNoise("b", 2.0, {}), role="noise")
         wheel.covariance.check_compatible(observed)
 
+    def test_a_noise_block_cannot_corrupt_the_others_through_its_hand_over(
+        self, observed
+    ):
+        class Corrupting(WhiteNoise):
+            """Overwrites the other noise blocks' sum it receives, then republishes."""
+
+            def sample(
+                self, conditional_residual, covariance, current_block_state, *, rng
+            ):
+                if covariance is not None:
+                    covariance.blocks.setflags(write=True)
+                    covariance.blocks[...] = 999.0
+                return super().sample(
+                    conditional_residual, covariance, current_block_state, rng=rng
+                )
+
+        seen = {}
+        wheel = Wheel(observed)
+        wheel.add(WhiteNoise("a", 2.0, seen), role="noise")
+        wheel.add(Corrupting("b", 3.0, seen), role="noise")
+        wheel.run(1)
+        np.testing.assert_array_equal(seen["b"][0], 2.0)  # a's model at registration
+        np.testing.assert_array_equal(seen["b"][1], 999.0)  # its copy was overwritten
+        np.testing.assert_array_equal(wheel.ledger["a"].covariance.A, 2.0)
+        np.testing.assert_array_equal(wheel.covariance.A, 5.0)
+        np.testing.assert_array_equal(
+            wheel._noise_sum.excluding(wheel._block_indices["b"]).A, 2.0
+        )
+
 
 class TestCovarianceGrid:
     """The first noise publication fixes the grid of the sum."""
@@ -464,6 +495,42 @@ class TestCovarianceGrid:
             wheel.add(
                 FixedNoiseBlock("time", white_covariance(observed, 1.0)), role="noise"
             )
+
+    def test_a_refused_first_noise_publication_leaves_the_grid_unset(self, observed):
+        class Publishes:
+            """A noise block on the time grid, publishing on frequency if off_grid."""
+
+            name = "noise"
+
+            def __init__(self, off_grid):
+                self.off_grid = off_grid
+
+            def initial_sample(self, conditional_residual, covariance, *, rng):
+                published_on = (
+                    transform(conditional_residual, "frequency")
+                    if self.off_grid
+                    else conditional_residual
+                )
+                return BlockState(covariance=white_covariance(published_on, 1.0))
+
+            def sample(
+                self, conditional_residual, covariance, current_block_state, *, rng
+            ):
+                return current_block_state
+
+        wheel = Wheel(observed, random_seed=3)
+        before = snapshot(wheel)
+        with pytest.raises(
+            ValueError, match=re.escape("noise.initial_sample covariance is on grid")
+        ):
+            wheel.add(Publishes(off_grid=True), role="noise")
+        assert_unchanged(wheel, before)
+        assert wheel._covariance_grid is None
+        assert wheel.covariance is None
+        assert wheel._roles == {}
+        wheel.add(Publishes(off_grid=False), role="noise")
+        assert wheel._covariance_grid == observed.grid
+        np.testing.assert_array_equal(wheel.covariance.A, 1.0)
 
 
 class TestRemovedApi:

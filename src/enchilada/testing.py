@@ -98,7 +98,9 @@ def check_block(
         noise_blocks: Noise blocks registered before ``block_under_test``. A
             signal block that needs a covariance gets it from a
             ``FixedNoiseBlock`` here; a noise block under test receives their
-            sum as its ``covariance``.
+            sum as its ``covariance``. Their covariances must be on
+            ``observed_data``'s grid: to test with a frequency-grid covariance,
+            pass ``transform(observed_data, "frequency")`` as ``observed_data``.
         random_seed: Seed for the scratch Wheel's NumPy generator, which also
             drives ``initial_sample``. Defaults to 0 for reproducibility; None
             requests nondeterministic initialization.
