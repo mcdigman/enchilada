@@ -318,9 +318,17 @@ def test_sine_requires_time_white_noise_on_the_data_grid():
         block.sample(data, noise, prior, rng=np.random.default_rng(1))
 
 
-def test_white_noise_start_requires_time_data():
+@pytest.mark.parametrize(
+    "make_block",
+    [
+        lambda toy: toy.SineBlock("slow", 0.004),
+        lambda toy: toy.WhiteNoiseBlock("noise"),
+    ],
+    ids=["sine", "white_noise"],
+)
+def test_toy_starts_require_time_data(make_block):
     toy = load_example("toy_fit")
-    block = toy.WhiteNoiseBlock("noise")
+    block = make_block(toy)
     with pytest.raises(ValueError, match="time-domain"):
         block.initial_sample(
             toy.make_observed().to_frequency(), None, rng=np.random.default_rng(0)

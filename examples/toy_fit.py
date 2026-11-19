@@ -178,10 +178,11 @@ def run_toy_fit(n_cycles: int = 300, burn_in: int = 100, seed: int = 0):
     if not 0 <= burn_in < n_cycles:
         raise ValueError("burn_in must be nonnegative and smaller than n_cycles")
     observed = make_observed(seed)
-    # A child stream keeps the campaign (prior draws at registration, then
-    # sampling) from replaying the observation-noise draws.
+    # Seed the campaign from a child of the observation seed so registration and
+    # sampling never replay the observation-noise draws.
     campaign_seed = np.random.SeedSequence(seed).spawn(1)[0]
     wheel = Wheel(observed, random_seed=int(campaign_seed.generate_state(1)[0]))
+    # The sine starts need no covariance, so the signal blocks may register first.
     for name, frequency in (("slow", 0.004), ("fast", 0.011)):
         wheel.add(SineBlock(name=name, freq=frequency), data_domain="time")
     wheel.add(WhiteNoiseBlock(name="noise"), data_domain="time")

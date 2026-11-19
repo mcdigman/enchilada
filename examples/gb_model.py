@@ -121,13 +121,14 @@ class GBBlock:
 
     The block owns its sampler continuation in ``self.state``. ``initial_sample``
     draws every walker from the uniform box, resets ``self.state`` and publishes
-    the first walker; Wheel calls it once at registration. Each call rebuilds
-    GBGPU and Eryn, restores numerical walker/RNG state, and evaluates the
-    conditional residual.
-    ``BlockState.parameters`` and its signal describe the first current walker,
-    a posterior draw after mixing. ``state.samples`` holds only this cycle's
-    samples; collect a chain with the Wheel callback. ``state.updates``
-    counts calls to ``sample``, each of which runs ``steps_per_cycle`` steps.
+    the first walker; Wheel calls it once at registration. Each ``sample`` call
+    rebuilds GBGPU and Eryn, restores numerical walker/RNG state, and evaluates
+    the conditional residual.
+    ``BlockState.parameters`` and its signal describe the first current walker
+    (its prior draw at registration, a posterior draw after mixing).
+    ``state.samples`` holds only this cycle's samples; collect a chain with the
+    Wheel callback. ``state.updates`` counts calls to ``sample``, each of which
+    runs ``steps_per_cycle`` steps.
 
     This CPU example uses one temperature and fixed ensemble splits. Adaptive
     moves or tempering would require carrying their additional evolving state.
@@ -257,9 +258,10 @@ class GBBlock:
     ) -> BlockState:
         """Initialize block-owned walkers and publish the first walker's signal.
 
-        Wheel calls this at registration with frequency-domain data and a
-        frequency-domain covariance on the data grid. It resets ``self.state``;
-        a fresh block instance belongs to each independent campaign.
+        Wheel calls this once at registration. It requires the campaign covariance
+        already in place on the frequency data grid: pass ``initial_covariance`` to
+        ``Wheel`` or register the noise block first. It resets ``self.state``, so a
+        fresh block instance belongs to each independent campaign.
         """
         gb, _ = self._context(conditional_residual, covariance)
         bounds = np.asarray(self.bounds)
