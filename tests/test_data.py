@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from conftest import make_observed, white_covariance
-from enchilada import BlockState, L1Data, Wheel, transform
+from enchilada import BlockState, FixedNoiseBlock, L1Data, Wheel, transform
 
 
 class TestConstructorSettings:
@@ -41,7 +41,8 @@ class TestConstructorSettings:
             channel_data={"A": data.channel_data["A"], "E": data.channel_data["E"]},
         )
         covariance = white_covariance(data, {"A": 1.0, "E": 4.0})
-        wheel = Wheel(reordered, covariance)
+        wheel = Wheel(reordered)
+        wheel.add(FixedNoiseBlock("noise", covariance), role="noise")
         assert wheel.observed_data.channel_names == ("E", "A")
         assert reordered.to_frequency().to_time().channel_names == ("E", "A")
 

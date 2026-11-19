@@ -5,8 +5,8 @@ from dataclasses import dataclass, replace
 import numpy as np
 import pytest
 
-from conftest import make_observed, starting_at, white_covariance
-from enchilada import Wheel
+from conftest import starting_at, white_covariance
+from enchilada import FixedNoiseBlock, Wheel
 
 
 class Counter:
@@ -31,7 +31,7 @@ class Counter:
 def test_ledger_carries_estimates_and_block_keeps_continuation(observed):
     wheel = Wheel(observed, random_seed=4)
     block = Counter()
-    wheel.add(block)
+    wheel.add(block, role="signal")
     assert block.state.n == 0
     initial = wheel.ledger["counter"].parameters["a"]
     wheel.run(2)
@@ -54,7 +54,7 @@ def test_block_state_parameters_are_copied_on_adoption_and_read(observed):
         parameters={"a": 0.0, "amplitudes": [np.ones(2)]}
     )
     wheel = Wheel(observed)
-    wheel.add(starting_at(Counter(), initial))
+    wheel.add(starting_at(Counter(), initial), role="signal")
     initial.parameters["amplitudes"][0][:] = 10
     wheel.ledger["counter"].parameters["amplitudes"][0][:] = 20
     np.testing.assert_array_equal(
@@ -83,8 +83,8 @@ def test_failed_sample_rolls_back_published_state_data_and_rng(observed):
 
     actual, expected = Wheel(observed, random_seed=5), Wheel(observed, random_seed=5)
     block = FailsOnce()
-    actual.add(block)
-    expected.add(Counter())
+    actual.add(block, role="signal")
+    expected.add(Counter(), role="signal")
     before = actual.ledger["counter"].parameters.copy()
     with pytest.raises(ValueError, match="non-finite"):
         actual.run(1)
@@ -101,8 +101,8 @@ def test_failed_sample_rolls_back_published_state_data_and_rng(observed):
 def test_separate_blocks_keep_independent_campaign_continuation(observed):
     first, second = Counter(), Counter()
     one, two = Wheel(observed, random_seed=7), Wheel(observed, random_seed=7)
-    one.add(first)
-    two.add(second)
+    one.add(first, role="signal")
+    two.add(second, role="signal")
     one.run(2)
     assert first.state.n == 2
     assert second.state.n == 0
@@ -123,8 +123,8 @@ def test_retained_rng_reference_cannot_advance_campaign(observed):
             )
 
     actual, expected = Wheel(observed, random_seed=11), Wheel(observed, random_seed=11)
-    actual.add(RetainsRng())
-    expected.add(Counter())
+    actual.add(RetainsRng(), role="signal")
+    expected.add(Counter(), role="signal")
     actual.run(1)
     expected.run(1)
     retained[0].normal(size=100)
@@ -152,16 +152,14 @@ def test_failed_adoption_preserves_rng_and_published_state(observed, failure):
                     return replace(result, parameters={"amplitude": CannotCopy()})
                 if failure == "exception":
                     raise RuntimeError("sampler failed")
-                wrong_grid = make_observed(
-                    np.random.default_rng(0), num_time_samples=32
-                )
-                return result.with_covariance(white_covariance(wrong_grid, 1))
+                # A signal block may not publish a covariance at all.
+                return result.with_covariance(white_covariance(conditional_residual, 1))
             return result
 
     actual, expected = Wheel(observed, random_seed=12), Wheel(observed, random_seed=12)
     block = Invalid()
-    actual.add(block)
-    expected.add(Counter())
+    actual.add(block, role="signal")
+    expected.add(Counter(), role="signal")
     with pytest.raises((RuntimeError, ValueError)):
         actual.run(1)
     assert actual.ledger["counter"].parameters == {"a": 0.0}
@@ -176,7 +174,8 @@ def test_failed_adoption_preserves_rng_and_published_state(observed, failure):
 @pytest.mark.parametrize("data_domain", [None, "time"])
 def test_covariance_input_and_output_snapshots_are_isolated(observed, data_domain):
     covariance = white_covariance(observed, 1)
-    wheel = Wheel(observed, initial_covariance=covariance)
+    wheel = Wheel(observed)
+    wheel.add(FixedNoiseBlock("noise", covariance), role="noise")
     covariance.blocks.setflags(write=True)
     covariance.A[:] *= 2
     inspected = wheel.covariance
@@ -189,9 +188,10 @@ def test_covariance_input_and_output_snapshots_are_isolated(observed, data_domai
             covariance.A[:] *= 4
             return current_block_state
 
-    wheel.add(EditsNoise(), data_domain=data_domain)
+    wheel.add(EditsNoise(), role="signal", data_domain=data_domain)
     wheel.run(1)
     np.testing.assert_array_equal(wheel.covariance.A, 1)
+    np.testing.assert_array_equal(wheel.ledger["noise"].covariance.A, 1)
 
 
 def test_residual_overflow_is_rejected_before_registration(observed):
@@ -208,7 +208,8 @@ def test_residual_overflow_is_rejected_before_registration(observed):
             starting_at(
                 Counter(),
                 data.block_state({ch: -x for ch, x in data.channel_data.items()}),
-            )
+            ),
+            role="signal",
         )
     assert len(wheel.ledger) == 0
     np.testing.assert_array_equal(
