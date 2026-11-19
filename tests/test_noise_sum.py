@@ -265,6 +265,35 @@ class TestRoles:
         else:
             assert wheel._roles["offender"] == role
 
+    def test_a_noise_block_cannot_smuggle_a_non_finite_covariance_past_revalidation(
+        self, observed
+    ):
+        class Smuggler(WhiteNoise):
+            """Builds a valid covariance in sample, then writes NaN into it."""
+
+            def sample(
+                self, conditional_residual, covariance, current_block_state, *, rng
+            ):
+                record(self.seen, self.name, covariance)
+                published = white_covariance(conditional_residual, self.level)
+                published.blocks.setflags(write=True)
+                published.blocks[0, 0, 0] = np.nan
+                return BlockState(
+                    covariance=published, parameters={"level": self.level}
+                )
+
+        wheel = Wheel(observed, random_seed=3)
+        # The only noise block, so no Covariance.__add__ in the sum revalidates it:
+        # the refusal can only come from the copy Wheel takes at adoption.
+        wheel.add(Smuggler("smuggler", 1.0, {}), role="noise")
+        wheel.add(ConstSignal("signal", 0.5), role="signal")
+        before = snapshot(wheel)
+        with pytest.raises(ValueError, match=re.escape("blocks must be finite")):
+            wheel.run(1)
+        assert_unchanged(wheel, before)
+        assert wheel._roles == {"smuggler": "noise", "signal": "signal"}
+        np.testing.assert_array_equal(wheel.covariance.A, 1.0)
+
 
 class TestNoiseSum:
     def test_the_campaign_has_no_covariance_until_a_noise_block_publishes(
@@ -422,6 +451,43 @@ class TestNoiseSum:
         np.testing.assert_array_equal(
             wheel._noise_sum.excluding(wheel._block_indices["b"]).A, 2.0
         )
+
+    def test_a_refused_noise_block_keeps_its_siblings_new_publication(self, observed):
+        class Rising(WhiteNoise):
+            """Publishes level 3.0 from sample instead of its registration level."""
+
+            def sample(
+                self, conditional_residual, covariance, current_block_state, *, rng
+            ):
+                self.level = 3.0
+                return self.initial_sample(conditional_residual, covariance, rng=rng)
+
+        class TurnsSignal(WhiteNoise):
+            """Registers with a covariance, then returns a template from sample."""
+
+            def sample(
+                self, conditional_residual, covariance, current_block_state, *, rng
+            ):
+                record(self.seen, self.name, covariance)
+                return const_block_state(conditional_residual, 0.5)
+
+        seen = {}
+        wheel = Wheel(observed)
+        wheel.add(Rising("a", 2.0, seen), role="noise")
+        wheel.add(TurnsSignal("b", 1.0, seen), role="noise")
+        with pytest.raises(
+            ValueError,
+            match=re.escape(
+                "b.sample returned a template but 'b' is registered as a noise block"
+            ),
+        ):
+            wheel.run(1)  # registration order: a is adopted, then b is refused
+        assert len(seen["b"]) == 2
+        np.testing.assert_array_equal(seen["b"][1], 3.0)  # a's new leaf, handed to b
+        np.testing.assert_array_equal(wheel.ledger["a"].covariance.A, 3.0)
+        np.testing.assert_array_equal(wheel.ledger["b"].covariance.A, 1.0)
+        assert wheel.ledger["b"].template is None
+        np.testing.assert_array_equal(wheel.covariance.A, 4.0)
 
 
 class TestCovarianceGrid:
