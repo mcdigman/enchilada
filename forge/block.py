@@ -7,9 +7,12 @@ model needs from its inputs. The placeholder is a sinusoid of one amplitude
 at `frequency_hz`, rendered natively on the frequency grid, with a Gaussian
 prior on the amplitude, so `sample` is an exact conjugate Gaussian draw: the
 skeleton runs green on noise-only data with no tuning and every notebook cell
-shows real numbers. Replace the model; keep the shape of the contract.
+shows real numbers. Replace the model; keep the shape of the contract. The
+module-level `rfft_weights` and `inner_product` carry the Whittle
+normalisation on the frequency grid; a replacement likelihood reuses them.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -25,6 +28,28 @@ def rfft_weights(num_time_samples: int) -> np.ndarray:
     if num_time_samples % 2 == 0:
         weights[-1] = 1.0
     return weights
+
+
+def inner_product(
+    first: Mapping[str, np.ndarray],
+    second: Mapping[str, np.ndarray],
+    conditional_residual: L1Data,
+    covariance: Covariance,
+) -> float:
+    """The Whittle inner product of two frequency-grid signals, channels
+    independent: `sum over channels and bins of w_k Re(conj(first_k) second_k)
+    / C_k`, with `C_k` the per-bin variance `covariance.pair(channel, channel)`
+    (`(Tobs / 2) S(f_k)` for a one-sided PSD `S`) and `w_k` from `rfft_weights`.
+    `-0.5 * inner_product(r, r, ...)` is a residual `r`'s log-likelihood up to
+    a constant; a Gaussian amplitude posterior has precision `<h|h>` and mean
+    `<h|d> / <h|h>`."""
+    weights = rfft_weights(conditional_residual.num_time_samples)
+    total = 0.0
+    for name in conditional_residual.channel_names:
+        variance = covariance.pair(name, name).real
+        overlap = np.real(np.conj(first[name]) * second[name])
+        total += float(np.sum(weights * overlap / variance))
+    return total
 
 
 @dataclass
@@ -71,8 +96,10 @@ class ForgeBlock:
         # model assumes about the data.
         if conditional_residual.data_domain != "frequency":
             raise ValueError(
-                f"{self.name}: register this block with data_domain='frequency'; "
-                f"it received {conditional_residual.data_domain!r} data"
+                f"{self.name}: needs frequency-grid data (register it with "
+                "Wheel.add(..., data_domain='frequency') or pass "
+                f"transform(data, 'frequency')); got "
+                f"{conditional_residual.data_domain!r} data"
             )
         if self.frequency_hz >= conditional_residual.fny:
             raise ValueError(
@@ -112,10 +139,17 @@ class ForgeBlock:
             np.sin(2 * np.pi * self.frequency_hz * times_s)
         )
 
-    def _template(self, conditional_residual: L1Data, amplitude: float) -> BlockState:
-        # EDIT: render your waveform on the block's grid.
+    def _template(
+        self,
+        conditional_residual: L1Data,
+        amplitude: float,
+        basis: np.ndarray | None = None,
+    ) -> BlockState:
+        # EDIT: render your waveform on the block's grid (the placeholder's lives
+        # in _basis).
         self._check_residual(conditional_residual)
-        basis = self._basis(conditional_residual)
+        if basis is None:
+            basis = self._basis(conditional_residual)
         return conditional_residual.block_state(
             {name: amplitude * basis for name in conditional_residual.channel_names},
             parameters={"amplitude": float(amplitude)},
@@ -144,25 +178,25 @@ class ForgeBlock:
     ) -> BlockState:
         # EDIT: your sampler. Return a complete state after acceptance and
         # rejection alike. This placeholder ignores current_block_state because
-        # it draws the exact conjugate posterior of the amplitude.
+        # it draws the exact conjugate posterior of the amplitude; an MCMC step
+        # continues from current_block_state.parameters instead, and commits its
+        # diagnostics only once the new state is built.
         self._check_residual(conditional_residual)
         noise = self._check_covariance(conditional_residual, covariance)
         basis = self._basis(conditional_residual)
-        weights = rfft_weights(conditional_residual.num_time_samples)
-        precision = 1.0 / self.prior_std**2
-        weighted_data = 0.0
-        for name in conditional_residual.channel_names:
-            scale = weights / noise.pair(name, name)
-            precision += float(np.sum(scale * np.abs(basis) ** 2))
-            weighted_data += float(
-                np.sum(
-                    scale
-                    * np.real(np.conj(basis) * conditional_residual.channel_data[name])
-                )
+        unit = {name: basis for name in conditional_residual.channel_names}
+        precision = 1.0 / self.prior_std**2 + inner_product(
+            unit, unit, conditional_residual, noise
+        )
+        mean = (
+            inner_product(
+                unit, conditional_residual.channel_data, conditional_residual, noise
             )
-        mean = weighted_data / precision
+            / precision
+        )
         std = precision**-0.5
+        moved = self._template(conditional_residual, rng.normal(mean, std), basis)
         self.state.num_sample_calls += 1
         self.state.last_posterior_mean = mean
         self.state.last_posterior_std = std
-        return self._template(conditional_residual, rng.normal(mean, std))
+        return moved

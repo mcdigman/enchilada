@@ -212,7 +212,14 @@ to pass, and zero cross terms between the residual's channels (`ValueError`
 "independent channels"), the way `SineBlock` in `examples/toy_fit.py` checks.
 A prior draw needs no covariance, so `initial_sample` accepts `None`. A
 module-level `rfft_weights(num_time_samples)` gives the bin weights: 1 at DC
-and at Nyquist when `num_time_samples` is even, 2 elsewhere.
+and at Nyquist when `num_time_samples` is even, 2 elsewhere, and
+`inner_product(first, second, conditional_residual, covariance)`, built on
+them, is the Whittle inner product `sum_ch sum_k w_k Re(conj(first_k)
+second_k) / C_k` of two per-channel frequency-grid arrays. `sample` reads
+`precision = 1 / prior_std**2 + <h|h>` and `mean = <h|d> / precision`, and
+commits its diagnostics to `state` only after the new state is built; a
+replacement likelihood reuses `inner_product` instead of re-deriving the
+factor-of-two convention.
 
 ### `block.ipynb`
 
@@ -315,11 +322,15 @@ Skip-safe: `pytest.importorskip("h5py", reason=...)` at module level, like
   the simulated frequency window with the white covariance; `_check_residual`
   refuses a time-grid residual and a frequency at or above Nyquist, and
   `_check_covariance` refuses a `None` covariance, a covariance on another
-  grid and a covariance with a cross term; amplitude recovery: add `a_true * h` (with `h` the block's own
+  grid and a covariance with a cross term; `inner_product` on the simulated
+  window with white noise equals the time-domain sum `sum_t s_t x_t /
+  sigma**2` (Parseval); amplitude recovery: add `a_true * h` (with `h` the block's own
   basis at a frequency inside the decimation passband) to the simulated
   frequency window's channels, with `prior_std = 1e-17` so the data decide,
   run a `Wheel` with the matching white covariance for 300 cycles, and assert the chain mean after warm-up lies
-  within four posterior standard deviations of `a_true` and that the chain
+  within four posterior standard deviations of `a_true`, within four
+  standard errors of the block's recorded posterior mean, with the prior's
+  precision below a thousandth of the posterior's, and that the chain
   standard deviation agrees with the block's recorded posterior standard
   deviation to within 25 %.
 - Notebooks: every code cell of both notebooks compiles; each notebook's

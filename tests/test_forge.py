@@ -396,10 +396,13 @@ def test_forge_block_is_a_block_with_validated_settings(forge_block):
 @pytest.mark.parametrize(
     ("num_time_samples", "frequency_hz", "basis", "expected_precision"),
     [
-        # sin(2 pi t / 4) at 1 Hz: bin 1 is -2j; precision 1/0.25 + 2 * 4 / 2.
+        # sin(2 pi t / 4) at 1 Hz: bin 1 is -2j. Precision = prior 1/0.25 +
+        # likelihood 2 * |-2j|^2 / 2 = 4; in the time domain sum(s^2) / sigma^2
+        # = 2 / 0.5 with sigma^2 = C fs^2 / N = 2 / 4.
         (4, 0.25, [0.0, -2.0j, 0.0], 8.0),
         # sin(2 pi 0.4 t), 5 samples: the last bin, -2.5j, is interior and
-        # counts twice; precision 1/0.25 + 2 * 6.25 / 2.
+        # counts twice; likelihood 2 * 6.25 / 2 = 6.25, in the time domain
+        # 2.5 / 0.4 with sigma^2 = 2 / 5.
         (5, 0.4, [0.0, 0.0, -2.5j], 10.25),
     ],
 )
@@ -500,6 +503,37 @@ def test_forge_block_passes_check_block_on_the_simulated_window(
     assert np.isfinite(block.state.last_posterior_std)
 
 
+def test_inner_product_matches_the_time_domain_sum(
+    simulated_file, forge_data, forge_block
+):
+    window = forge_data.load_window(
+        simulated_file, factor=FACTOR, duration_s=DURATION_S, channels=("A", "E")
+    )
+    spectrum = transform(window, "frequency")
+    sigma2 = 1.7e-36
+    noise = white_covariance(spectrum, sigma2)
+    block = forge_block.ForgeBlock(frequency_hz=0.05)
+    unit = {name: block._basis(spectrum) for name in ("A", "E")}
+    times_s = window.start_time_gps + np.arange(window.N) / window.fs
+    sinusoid = np.sin(2 * np.pi * 0.05 * times_s)
+    # Parseval: the Whittle inner product with white noise is the time-domain
+    # sum over samples divided by the per-sample variance.
+    expected = (
+        sum(np.sum(sinusoid * window.channel_data[name]) for name in ("A", "E"))
+        / sigma2
+    )
+    np.testing.assert_allclose(
+        forge_block.inner_product(unit, spectrum.channel_data, spectrum, noise),
+        expected,
+        rtol=1e-10,
+    )
+    np.testing.assert_allclose(
+        forge_block.inner_product(unit, unit, spectrum, noise),
+        2 * np.sum(sinusoid**2) / sigma2,
+        rtol=1e-10,
+    )
+
+
 def test_forge_block_recovers_an_injected_amplitude(
     simulated_file, forge_data, forge_block
 ):
@@ -533,6 +567,13 @@ def test_forge_block_recovers_an_injected_amplitude(
     )
     samples = np.asarray(chain[50:])
     posterior_std = block.state.last_posterior_std
-    assert posterior_std < 0.1 * true_amplitude  # the data, not the prior, decide
+    # The data, not the prior, decide: the prior's precision is negligible.
+    assert block.prior_std**-2 < 1e-3 * posterior_std**-2
+    assert posterior_std < 0.1 * true_amplitude
+    # One noise realisation pulls the posterior mean; the chain follows it.
     assert abs(samples.mean() - true_amplitude) < 4 * posterior_std
+    recorded_mean = block.state.last_posterior_mean
+    assert abs(samples.mean() - recorded_mean) < 4 * posterior_std / np.sqrt(
+        samples.size
+    )
     np.testing.assert_allclose(samples.std(), posterior_std, rtol=0.25)
