@@ -126,8 +126,9 @@ def test_consumer_typos_are_static_errors(tmp_path):
     out = proc.stdout + proc.stderr
     assert 'has no attribute "Tobbs"' in out, out
     assert 'has no attribute "T_obs"' in out, out
-    # exactly the two typos -- the correct `r.Tobs` on the preceding line must
-    # not be flagged (an over-broad ban would break legitimate access)
+    # exactly the two typos plus the removed NoiseOverwrittenWarning import --
+    # the correct `r.Tobs` on the preceding line must not be flagged (an
+    # over-broad ban would break legitimate access)
     assert out.count("[attr-defined]") == 3, out
     # ... and a class without initial_sample is not a Block
     assert (
