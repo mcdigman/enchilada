@@ -8,6 +8,9 @@ from enchilada import BlockState, Wheel
 class AmplitudeUpdate:
     name = "amplitudes"
 
+    def initial_sample(self, conditional_residual, covariance, *, rng):
+        return BlockState(parameters={"amplitudes": np.array([1.0])})
+
     def sample(self, conditional_residual, covariance, current_block_state, *, rng):
         current_block_state.parameters["amplitudes"] += 1
         return current_block_state
@@ -15,10 +18,7 @@ class AmplitudeUpdate:
 
 def test_ledger_identity_is_reflexive_and_snapshots_are_stable(observed):
     wheel = Wheel(observed)
-    wheel.add(
-        AmplitudeUpdate(),
-        initial_block_state=BlockState(parameters={"amplitudes": np.array([1.0])}),
-    )
+    wheel.add(AmplitudeUpdate())
     assert wheel.ledger == wheel.ledger
     snapshot = wheel.ledger.snapshot()
     entry = snapshot["amplitudes"]
@@ -35,8 +35,5 @@ def test_ledger_identity_is_reflexive_and_snapshots_are_stable(observed):
 def test_empty_and_populated_snapshot_names_follow_registration(observed):
     wheel = Wheel(observed)
     assert wheel.ledger.snapshot() == {}
-    wheel.add(
-        AmplitudeUpdate(),
-        initial_block_state=BlockState(parameters={"amplitudes": np.array([1.0])}),
-    )
+    wheel.add(AmplitudeUpdate())
     assert list(wheel.ledger.snapshot()) == list(wheel.ledger) == ["amplitudes"]

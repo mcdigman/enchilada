@@ -13,7 +13,6 @@ class TestCheckBlock:
         check_block(
             block_under_test=EchoBlock(name="echo"),
             observed_data=observed,
-            initial_block_state=BlockState(),
             num_cycles=2,
             initial_covariance=white_covariance(observed, 1.0),
             random_seed=0,
@@ -28,11 +27,7 @@ class TestCheckBlock:
                 ch: rng.standard_normal(n // 2 + 1) + 0j for ch in ("A", "E", "T")
             },
         )
-        check_block(
-            EchoBlock(name="echo"),
-            obs,
-            initial_block_state=BlockState(),
-        )
+        check_block(EchoBlock(name="echo"), obs)
 
     def test_non_block_state_return_caught(self, observed):
         class Bad(EchoBlock):
@@ -47,7 +42,7 @@ class TestCheckBlock:
                 return {"A": np.zeros(1)}  # not a BlockState
 
         with pytest.raises(TypeError, match="must return a BlockState"):
-            check_block(Bad(name="bad"), observed, initial_block_state=BlockState())
+            check_block(Bad(name="bad"), observed)
 
     def test_off_grid_block_state_caught(self, observed):
         class Drifter(EchoBlock):
@@ -66,9 +61,7 @@ class TestCheckBlock:
                 )
 
         with pytest.raises(ValueError, match="length 3, expected"):
-            check_block(
-                Drifter(name="drift"), observed, initial_block_state=BlockState()
-            )
+            check_block(Drifter(name="drift"), observed)
 
     def test_conforming_noise_block_passes(self, observed):
         class FlatNoiseBlock(EchoBlock):
@@ -84,11 +77,7 @@ class TestCheckBlock:
                     white_covariance(conditional_residual, 1.0)
                 )
 
-        check_block(
-            FlatNoiseBlock(name="noise"),
-            observed.to_frequency(),
-            initial_block_state=BlockState(),
-        )
+        check_block(FlatNoiseBlock(name="noise"), observed.to_frequency())
 
     def test_noise_model_violating_contract_caught(self, observed):
         class BadNoise(EchoBlock):
@@ -103,18 +92,32 @@ class TestCheckBlock:
                 return conditional_residual.block_state().with_covariance(object())
 
         with pytest.raises(TypeError, match="Covariance"):
-            check_block(
-                BadNoise(name="bad"), observed, initial_block_state=BlockState()
-            )
+            check_block(BadNoise(name="bad"), observed)
 
-    def test_initial_block_state_is_required(self, observed):
-        with pytest.raises(TypeError, match="initial_block_state"):
-            check_block(EchoBlock(name="echo"), observed)
+    def test_block_without_initial_sample_is_refused(self, observed):
+        class SampleOnly:
+            name = "sample_only"
 
-    @pytest.mark.parametrize("invalid", [None, object()])
-    def test_initial_block_state_must_be_a_block_state(self, observed, invalid):
-        with pytest.raises(TypeError, match="initial_block_state.*BlockState"):
-            check_block(EchoBlock(name="echo"), observed, initial_block_state=invalid)
+            def sample(
+                self,
+                conditional_residual,
+                covariance,
+                current_block_state,
+                *,
+                rng,
+            ):
+                return current_block_state
+
+        with pytest.raises(TypeError, match="does not implement initial_sample"):
+            check_block(SampleOnly(), observed)
+
+    def test_failing_initial_sample_is_caught(self, observed):
+        class BadStart(EchoBlock):
+            def initial_sample(self, conditional_residual, covariance, *, rng):
+                return {"A": np.zeros(1)}  # not a BlockState
+
+        with pytest.raises(TypeError, match="initial_sample must return a BlockState"):
+            check_block(BadStart(name="bad"), observed)
 
 
 class TestEchoBlock:
@@ -123,10 +126,7 @@ class TestEchoBlock:
 
         echo = EchoBlock(name="echo")
         wheel = Wheel(observed)
-        wheel.add(
-            echo,
-            initial_block_state=BlockState(),
-        )
+        wheel.add(echo)
         wheel.run(3)
         assert echo.state.num_sample_calls == 3
         published = wheel.ledger["echo"]
@@ -139,10 +139,7 @@ class TestEchoBlock:
         from enchilada import Wheel
 
         wheel = Wheel(observed)
-        wheel.add(
-            EchoBlock(name="echo"),
-            initial_block_state=BlockState(),
-        )
+        wheel.add(EchoBlock(name="echo"))
         wheel.run(1)
         for ch in observed.channel_names:
             np.testing.assert_array_equal(
@@ -177,4 +174,8 @@ def test_echo_continuation_belongs_to_each_block_instance(observed, rng):
     assert echo.state.num_sample_calls == 2
     echo.state.metadata["diagnostic"] = 1
     assert fresh.state.metadata == {}
-    assert not hasattr(echo, "draw_prior")
+    start = echo.initial_sample(observed, None, rng=rng)
+    assert start.template is None
+    assert start.covariance is None
+    assert start.parameters == {}
+    assert echo.state.num_sample_calls == 2

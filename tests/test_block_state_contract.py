@@ -24,6 +24,9 @@ def test_block_local_state_survives_calls_without_entering_the_ledger(observed):
         def __init__(self):
             self.state = self.State(metadata={"resource": LocalResource()})
 
+        def initial_sample(self, conditional_residual, covariance, *, rng):
+            return conditional_residual.zero_block_state(parameters={"amplitude": 0.0})
+
         def sample(self, conditional_residual, covariance, current_block_state, *, rng):
             self.state.num_calls += 1
             amplitude = current_block_state.parameters["amplitude"] + 1.0
@@ -37,9 +40,8 @@ def test_block_local_state_survives_calls_without_entering_the_ledger(observed):
             )
 
     block = StatefulSignal()
-    initial = observed.zero_block_state(parameters={"amplitude": 0.0})
     wheel = Wheel(observed, random_seed=42)
-    wheel.add(block, initial_block_state=initial)
+    wheel.add(block)
     wheel.run(2)
 
     accepted = wheel.ledger["signal"]

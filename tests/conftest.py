@@ -42,6 +42,22 @@ def const_block_state(residual, value):
     )
 
 
+def starting_at(block, state):
+    """Give `block` an `initial_sample` that returns `state` as it is.
+
+    Test shorthand for a block whose start is a constant built by the test. The
+    block keeps its identity, name and local state; `state` must be on the grid
+    the block registers on, as a real `initial_sample` return would be.
+    """
+
+    def initial_sample(conditional_residual, covariance, *, rng):
+        return state
+
+    # object.__setattr__ also works on a frozen dataclass instance.
+    object.__setattr__(block, "initial_sample", initial_sample)
+    return block
+
+
 def white_covariance(data, variance):
     """White noise of `variance` per time sample, on `data`'s grid.
 

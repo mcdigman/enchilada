@@ -17,7 +17,7 @@ import sys
 
 import numpy as np
 
-from enchilada import BlockState, Wheel, decimate, load_mojito_l1, transform
+from enchilada import Wheel, decimate, load_mojito_l1, transform
 from enchilada.testing import EchoBlock
 
 SECONDS_PER_DAY = 86400.0
@@ -81,7 +81,7 @@ def main(
         rms = float(np.sqrt(np.mean(observed.channel_data[name] ** 2)))
         print(f"  {name}: rms {rms:.3e} per WDM coefficient")
     wheel = Wheel(observed, random_seed=0)
-    wheel.add(EchoBlock(name="echo"), initial_block_state=BlockState())
+    wheel.add(EchoBlock(name="echo"))
     # EchoBlock adds no signal, so its "[echo] ... residual RMS" line repeats the A
     # rms above: the block was served the WDM coefficients.
     wheel.run(num_cycles=1)
