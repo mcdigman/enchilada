@@ -75,7 +75,7 @@ enough to watch the Wheel hand each block its residual. The whole thing is:
 <!-- runnable -->
 ```python
 import numpy as np
-from enchilada import BlockState, L1Data, Wheel
+from enchilada import L1Data, Wheel
 from enchilada.testing import EchoBlock
 
 rng = np.random.default_rng(0)
@@ -94,14 +94,8 @@ ucb = EchoBlock(name="ucb")
 mbhb = EchoBlock(name="mbhb")
 
 wheel = Wheel(observed_data=observed)
-wheel.add(
-    block_to_register=ucb,
-    initial_block_state=BlockState(),
-)
-wheel.add(
-    block_to_register=mbhb,
-    initial_block_state=BlockState(),
-)
+wheel.add(block_to_register=ucb)
+wheel.add(block_to_register=mbhb)
 wheel.run(num_cycles=3)
 
 wheel.residual()  # the running residual: observed minus every block's template
@@ -157,6 +151,9 @@ native GBGPU runtime validation. Its outputs are not committed; run it to popula
 Implement the `Block` protocol:
 
 - `name`: unique within a Wheel.
+- `initial_sample(conditional_residual, covariance, *, rng) -> BlockState`:
+  draw or construct the block's start from the data minus the starts of the
+  blocks registered before it; `Wheel.add` calls it once at registration.
 - `sample(conditional_residual, covariance, current_block_state, *, rng) -> BlockState`:
   sample against the data minus every other block's latest signal and return
   the new physical estimate.
@@ -221,37 +218,33 @@ Published parameters must support deep copying. Keep open files, processes, GPU
 resources, and sampler history on the block or in an external sink, outside
 `BlockState`. A returned `L1Data` is rejected: blocks return a `BlockState`.
 
-Every `Wheel.add` requires a complete `initial_block_state`; omitting it or passing
-`None` is an error. The application chooses its starting estimate and constructs
-the published state before registration. For a known injection:
+Every block draws or constructs its own start. `Wheel.add` calls the block's
+`initial_sample` once with the observations minus the adopted starts of the
+blocks registered before it, on the block's grid, together with the current
+covariance (`None` until a block supplies one) and the campaign RNG, then
+validates and adopts the returned state exactly like a `sample` return. For a
+known injection, make the start block configuration:
 
 ```python
-initial_state = observed.block_state(
-    template=injected_signal,
-    parameters=injected_parameters,
+signal_block = SineAmplitudeBlock(
+    name="signal", frequency_hz=0.004, start_amplitude=injected_amplitude
 )
-wheel.add(
-    block_to_register=signal_block,
-    initial_block_state=initial_state,
-    data_domain="time",
-)
+wheel.add(block_to_register=signal_block, data_domain="time")
 ```
 
-Registration validates and adopts this state without calling model code or
-consuming Wheel RNG draws. Build `initial_state` with the applicable template,
-covariance, and physical parameters. Initialize the block's own `state`
-separately so its sampler agrees with that estimate. Optional prior
-initialization belongs in application or model setup: use a separate setup RNG
-to draw parameters and construct their published state. The Block protocol
-requires only `name` and `sample`. The
-[Block authoring tutorial](examples/create_block.ipynb) shows a complete
-example. Supply signal arrays on the requested block domain and WDM grid, or
-the observation grid if no domain is selected. Wheel converts them to the
-observation grid for storage. An optional covariance follows the normal
-ownership rules and must be on the block's own grid, like its template; Wheel
-holds it on that grid (see
+A block whose start is not configured draws it from its prior with the `rng`
+it is handed, so a seeded campaign reproduces its starts as well as its
+chains; registration consumes the campaign RNG only when `initial_sample`
+draws from it. The Block protocol requires `name`, `initial_sample` and
+`sample`. The [Block authoring tutorial](examples/create_block.ipynb) shows a
+complete example. Return signal arrays on the block's requested domain and
+WDM grid, or the observation grid if no domain is selected; Wheel converts
+them to the observation grid for storage. A covariance in the start follows
+the normal ownership rules and must be on the block's own grid, like its
+template; Wheel holds it on that grid (see
 [Time, frequency, and WDM translation](#time-frequency-and-wdm-translation)).
-Noise-only initial states are supported too.
+Noise-only starts are supported too, and blocks start in registration order:
+register a noise block before the blocks whose starts need its covariance.
 
 Wheel validates and defensively copies the published state before adopting it
 atomically.
@@ -355,11 +348,11 @@ Wheel uses descriptive arguments at each entry point:
 | Entry point | Signature |
 | --- | --- |
 | Constructor | `Wheel(observed_data, initial_covariance=None, *, random_seed=None)` |
-| Register a block | `add(block_to_register, *, initial_block_state, data_domain=None, num_frequency_divisions=None, num_time_divisions=None)` |
+| Register a block | `add(block_to_register, *, data_domain=None, num_frequency_divisions=None, num_time_divisions=None)` |
 | Sample complete cycles | `run(num_cycles, on_cycle_complete=None)` |
 | Read a residual | `residual(exclude_block_name=None)` |
 | Read a block's signal | `contribution(block_name)` |
-| Check a block | `check_block(block_under_test, observed_data, num_cycles=2, *, initial_block_state, initial_covariance=None, random_seed=0)` |
+| Check a block | `check_block(block_under_test, observed_data, num_cycles=2, *, initial_covariance=None, random_seed=0)` |
 
 Inspect `wheel.observed_data`, `wheel.working_residual`, `wheel.covariance`, and
 `wheel.ledger[name]`; each returns defensive copies of changing data. The orbit is
@@ -396,20 +389,18 @@ check_block(
     observed_data=toy_observed,
     num_cycles=2,
     initial_covariance=None,
-    initial_block_state=toy_initial_state,
     random_seed=0,
 )
 ```
 
-This checks registration of the required complete `initial_block_state` and the
-requested number of sampling cycles, advancing the supplied block's own state.
-Build `toy_initial_state` with the physical parameters, template, and covariance
-that `MyBlock.sample` expects, and initialize its sampler state separately.
-Supply its template in the domain of `observed_data`; `check_block` does not
-select a separate block domain. The optional initial
-covariance and random seed configure the test campaign; the defaults are shown
-above. Each model must independently validate its
-prior, likelihood, and sampler; see the conjugate example in `examples/toy_fit.py`.
+This registers the block, which calls its `initial_sample` on the grid of
+`observed_data`, then runs the requested number of sampling cycles, advancing
+the supplied block's own state. Construct `MyBlock` with whatever start it
+should render; `check_block` does not select a separate block domain. The
+optional initial covariance and random seed configure the test campaign, and
+the seed also drives `initial_sample`; the defaults are shown above. Each
+model must independently validate its prior, likelihood, and sampler; see the
+conjugate example in `examples/toy_fit.py`.
 
 ## Time, frequency, and WDM translation
 
@@ -451,21 +442,12 @@ uv run --no-sync python examples/domain_translation.py
 Select a representation when registering a block:
 
 ```python
-wheel.add(
-    frequency_block,
-    initial_block_state=initial_frequency_state,
-    data_domain="frequency",
-)
-wheel.add(
-    wdm_block,
-    initial_block_state=initial_wdm_state,
-    data_domain="wdm",
-    num_frequency_divisions=8,
-)
+wheel.add(frequency_block, data_domain="frequency")
+wheel.add(wdm_block, data_domain="wdm", num_frequency_divisions=8)
 ```
 
-Each initial state must contain the physical estimate its block expects, with
-any template arrays on that block's selected domain and WDM grid. Wheel converts
+Each block's `initial_sample` receives the residual on its selected domain and
+WDM grid and returns its start there. Wheel converts
 the conditional residual and previous signal into the selected representation,
 then converts returned outputs back to the canonical observation grid before
 atomic adoption. Omitting `data_domain` keeps the default handoff. To convert a
@@ -479,10 +461,10 @@ A covariance does not translate between representations: it carries its grid,
 independent copy. A block state's covariance passes through `transform`
 unchanged. Wheel keeps the current covariance on the grid its owner published
 it on and hands it to blocks registered on that grid; a block registered on
-another grid is refused at `run` with `ValueError` naming both grids, and a
-seed or returned covariance on another grid than its block's is refused at
-`add` or `run`. In a campaign that carries covariance, register every block on
-one grid.
+another grid is refused at `add` or `run` with `ValueError` naming both grids,
+and a start or returned covariance on another grid than its block's is refused
+at `add` or `run`. In a campaign that carries covariance, register every block
+on one grid.
 
 The [translation notebook](examples/domain_translation.ipynb) walks through the
 same API with plots, round-trip checks, and blocks using different domains.
@@ -561,9 +543,9 @@ producing quietly wrong science:
   `channel_names`, array lengths must match `data_domain`/`num_time_samples`,
   and an attached orbit must span the observation (catching GPS-vs-zero-based epoch
   mismatches at construction, not mid-run).
-- `Wheel` checks `name` and `sample` before registration, then validates
-  every supplied initial or returned signal's channels, lengths, real/complex
-  kind, and finiteness.
+- `Wheel` checks `name`, `initial_sample` and `sample` before registration,
+  then validates every start or returned signal's channels, lengths,
+  real/complex kind, and finiteness.
   Covariance publications are checked for channel order and for the block's
   registered grid before any state is committed.
 - `NumericOrbit.positions` refuses to extrapolate outside its tabulated
@@ -739,9 +721,9 @@ oversights:
   covariance. Ownership changes remain warnings because they may be deliberate.
 - **No covariance delivery across grids yet.** A `Covariance` lives on one
   grid and is not translated, so a campaign that carries covariance keeps every
-  block on one grid; a block on another grid is refused at `run`. Delivering a
-  noise model to blocks on several grids is the noise-components layer that
-  follows the domania migration.
+  block on one grid; a block on another grid is refused at `add` or `run`.
+  Delivering a noise model to blocks on several grids is the noise-components
+  layer that follows the domania migration.
 - **No checkpoint file format or lifecycle end.** A restart requires the blocks'
   sampler states, Wheel's accepted physical estimates, and the relevant RNG states
   to be saved and restored consistently. Serialization, restoration, and resource

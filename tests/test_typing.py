@@ -47,7 +47,7 @@ assert_type(noise.copy(), Covariance)
 assert_type(transform(BlockState(), "time"), BlockState)
 wheel = Wheel(r, noise)
 wheel.add(EchoBlock("wdm"), data_domain="wdm", num_time_divisions=2)
-wheel.add(EchoBlock("seeded"))
+wheel.add(EchoBlock("plain"))
 check_block(EchoBlock("checked"), r)
 
 class SampleOnly:

@@ -207,20 +207,30 @@ def test_invalid_domain_selection_does_not_register_or_sample():
     assert len(wheel.ledger) == 0
 
 
-def test_a_start_on_the_wrong_wdm_grid_is_refused():
-    # The old test also monkeypatched _wdm_transform to prove the bad template
-    # never reached domania. add now legitimately transforms the residual to
-    # WDM before initial_sample runs, so that guard would fire for the wrong
-    # reason; the wrong template is still caught by the grid check inside
-    # transform, before any WDM conversion of the template itself.
+def test_a_start_on_the_wrong_wdm_grid_is_refused(monkeypatch):
+    # add transforms the residual to WDM before initial_sample runs; the wrong
+    # template is then caught by the grid check inside transform, before any
+    # WDM conversion of the template itself, so domania never sees it.
     data = observations()
     wheel = Wheel(data)
     # Both grids represent 64 samples, but the selected (Nf, Nt) = (4, 16)
     # requires shape (4, 16), not the (8, 8) coefficients of an (8, 8) grid.
     wrong = BlockState(template={name: np.zeros((8, 8)) for name in data.channel_names})
+
+    def unexpected_transform(*args, **kwargs):
+        raise AssertionError("the wrong template must not reach domania")
+
+    class WrongGrid(ConstantSignal):
+        def initial_sample(self, conditional_residual, covariance, *, rng):
+            assert conditional_residual.data_domain == "wdm"  # add's transform is done
+            monkeypatch.setattr(
+                "enchilada._transforms._wdm_transform", unexpected_transform
+            )
+            return wrong
+
     with pytest.raises(ValueError, match="shape"):
         wheel.add(
-            starting_at(ConstantSignal("wrong_grid", 1.0, "wdm"), wrong),
+            WrongGrid("wrong_grid", 1.0, "wdm"),
             data_domain="wdm",
             num_frequency_divisions=4,
         )
@@ -274,7 +284,9 @@ def test_block_on_another_grid_than_the_covariance_is_refused_at_add():
             )
 
         def sample(self, conditional_residual, covariance, current_block_state, *, rng):
-            raise AssertionError("the Wheel must refuse before sample is called")
+            raise AssertionError(
+                "unreachable: sample exists only to pass add's callable check"
+            )
 
     data = observations()
     wheel = Wheel(data, white_covariance(data, 0.25), random_seed=3)
@@ -430,17 +442,17 @@ def test_covariance_published_on_the_block_grid_is_held_there():
 
 @pytest.mark.parametrize("domain", ["frequency", "wdm"])
 def test_noise_only_start_on_the_block_grid_is_adopted_there(domain):
-    """A seed covariance is on the block's grid; the Wheel keeps it there."""
+    """A start covariance is on the block's grid; the Wheel keeps it there."""
     data = observations()
     reference, options = block_reference(data, domain)
     variances = np.ones(reference.grid.channel_shape)
-    seed = BlockState(
+    start = BlockState(
         covariance=Covariance.like(
             reference, {name: variances for name in data.channel_names}
         )
     )
     wheel = Wheel(data)
-    wheel.add(starting_at(EchoBlock("noise"), seed), data_domain=domain, **options)
+    wheel.add(starting_at(EchoBlock("noise"), start), data_domain=domain, **options)
     assert wheel.covariance.grid == reference.grid
     np.testing.assert_array_equal(wheel.covariance.A, variances)
     assert wheel.ledger["noise"].covariance.grid == reference.grid
@@ -470,11 +482,11 @@ def test_wheel_refuses_a_covariance_with_reordered_channel_names():
 def test_start_covariance_with_reordered_channel_names_is_refused_at_registration():
     data = observations()
     reordered = replace(data, channel_names=("E", "A"))
-    seed = BlockState(covariance=white_covariance(reordered, 1.0))
+    start = BlockState(covariance=white_covariance(reordered, 1.0))
     wheel = Wheel(data, random_seed=3)
     rng_before = wheel._rng.bit_generator.state
     with pytest.raises(ValueError, match="channel_names"):
-        wheel.add(starting_at(EchoBlock("noise"), seed))
+        wheel.add(starting_at(EchoBlock("noise"), start))
     assert len(wheel.ledger) == 0
     assert wheel._blocks == []
     assert wheel._block_domains == {}

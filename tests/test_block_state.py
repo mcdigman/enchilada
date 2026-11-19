@@ -103,13 +103,11 @@ def test_valid_rfft_signal_preserves_all_allowed_components(observed, num_time_s
     )
 
 
-def noise_initial_result(observed, *, signal_value=None):
-    signal = None
-    if signal_value is not None:
-        signal = {
-            ch: np.full_like(samples, signal_value)
-            for ch, samples in observed.channel_data.items()
-        }
+def noise_start(observed, *, signal_value):
+    signal = {
+        ch: np.full_like(samples, signal_value)
+        for ch, samples in observed.channel_data.items()
+    }
     return observed.block_state(
         template=signal,
         covariance=white_covariance(observed, 1),
@@ -174,7 +172,7 @@ def test_rejected_rfft_signal_preserves_estimates_state_and_rng(
             return result
 
     actual, expected = Wheel(observed, random_seed=8), Wheel(observed, random_seed=8)
-    initial = noise_initial_result(observed, signal_value=0.5)
+    initial = noise_start(observed, signal_value=0.5)
     actual_block, expected_block = InvalidOnce(), NoiseOnly()
     actual.add(starting_at(actual_block, initial))
     expected.add(starting_at(expected_block, initial))
@@ -231,7 +229,7 @@ def test_absent_signal_removes_previous_contribution_and_can_return(observed, do
     if domain == "frequency":
         observed = observed.to_frequency()
 
-    def population_initial_result(data):
+    def population_start(data):
         return data.block_state(
             template={
                 ch: np.full_like(samples, 0.25)
@@ -251,7 +249,7 @@ def test_absent_signal_removes_previous_contribution_and_can_return(observed, do
             self.state = self.State()
 
         def initial_sample(self, conditional_residual, covariance, *, rng):
-            return population_initial_result(conditional_residual)
+            return population_start(conditional_residual)
 
         def sample(self, conditional_residual, covariance, current_block_state, *, rng):
             for channel, samples in observed.channel_data.items():
@@ -261,7 +259,7 @@ def test_absent_signal_removes_previous_contribution_and_can_return(observed, do
             self.state.steps += 1
             if self.state.steps == 1:
                 return BlockState(parameters={"num_sources": 0})
-            return population_initial_result(conditional_residual)
+            return population_start(conditional_residual)
 
     wheel = Wheel(observed)
     wheel.add(NoiseOnly())
@@ -308,7 +306,7 @@ def test_rejected_noise_result_preserves_signal_covariance_state_and_rng(
             return result
 
     actual, expected = Wheel(observed, random_seed=8), Wheel(observed, random_seed=8)
-    initial = noise_initial_result(observed, signal_value=0.5)
+    initial = noise_start(observed, signal_value=0.5)
     actual_block, expected_block = FailsOnce(), NoiseOnly()
     actual.add(starting_at(actual_block, initial))
     expected.add(starting_at(expected_block, initial))

@@ -313,11 +313,11 @@ class TestAtomicRegistration:
                 )
 
         wheel = Wheel(observed)
-        block = Recorder("prior", 2.0)
+        block = Recorder("rec", 2.0)
         wheel.add(block)
         assert calls == ["initial_sample"]
         assert block.state.updates == 0
-        np.testing.assert_array_equal(wheel.contribution("prior")["A"], 2.0)
+        np.testing.assert_array_equal(wheel.contribution("rec")["A"], 2.0)
         wheel.run(2)
         assert calls == ["initial_sample", "sample", "sample"]
 
@@ -424,14 +424,21 @@ class TestExplicitNoise:
                 np.zeros_like(observed.channel_data[ch]),
             )
 
-    def test_initial_noise_is_available_to_explicit_initialization(self, observed):
+    def test_initial_sample_receives_the_noise_published_at_registration(
+        self, observed
+    ):
+        seen = {}
+
+        class Reader(ConstBlock):
+            def initial_sample(self, conditional_residual, covariance, *, rng):
+                seen["covariance"] = covariance
+                return super().initial_sample(conditional_residual, covariance, rng=rng)
+
         wheel = Wheel(observed)
         wheel.add(LevelNoiseBlock("noise"))
-        covariance = wheel.covariance
-        wheel.add(ConstBlock("rec", float(covariance.A[0])))
-        assert isinstance(covariance, Covariance)
-        np.testing.assert_array_equal(covariance.A, 1.0)
-        np.testing.assert_array_equal(wheel.contribution("rec")["A"], 1.0)
+        wheel.add(Reader("rec", 1.0))
+        assert isinstance(seen["covariance"], Covariance)
+        np.testing.assert_array_equal(seen["covariance"].A, 1.0)
 
     def test_sample_sees_current_noise(self, observed):
         levels = []
@@ -560,7 +567,7 @@ class TestBoundaryGuards:
 
     def test_block_with_name_initial_sample_and_sample_can_register(self, observed):
         class Minimal:
-            name = "no_prior"
+            name = "minimal"
 
             def initial_sample(self, conditional_residual, covariance, *, rng):
                 return BlockState()
@@ -578,7 +585,7 @@ class TestBoundaryGuards:
         wheel = Wheel(observed)
         wheel.add(Minimal())
         wheel.run(1)
-        assert list(wheel.ledger) == ["no_prior"]
+        assert list(wheel.ledger) == ["minimal"]
 
     def test_a_death_move_to_a_zero_template_is_silent(self, observed):
         # a reversible-jump block whose last source dies returns a zero
