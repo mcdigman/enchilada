@@ -171,6 +171,7 @@ RNG state on the block instance, for example in a nested dataclass with typed fi
 ```python
 from dataclasses import dataclass
 
+
 class MyBlock:
     @dataclass
     class State:
