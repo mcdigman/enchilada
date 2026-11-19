@@ -229,32 +229,40 @@ Cells, in order; code cells print one line each so the test can assert on them:
    to the tutorial.
 2. Code, settings: `%load_ext autoreload` / `%autoreload 2`; imports;
    `MOJITO_PATH = os.environ.get("ENCHILADA_MOJITO_L1")` with a `SystemExit`
-   message when unset; `DURATION_S = float(os.environ.get("FORGE_DURATION_S", 86400.0))`;
+   message (naming `%env`) when unset; `DURATION_S = float(os.environ.get("FORGE_DURATION_S", 86400.0))`;
    `FACTOR = int(os.environ.get("FORGE_FACTOR", 10))`; `DOMAIN = "frequency"`;
+   `NUM_FREQUENCY_DIVISIONS = None` (the WDM row count, needed when
+   `DOMAIN = "wdm"`; the decimated length divided by it must be an even
+   integer);
    `window = load_window(MOJITO_PATH, factor=FACTOR, duration_s=DURATION_S, channels=("A", "E"))`
    on the time grid; `LEVEL = 2 * mean(var(channel)) / window.fs` as the
    white level that matches the window, marked as the placeholder for the
    simulation's PSD with the lisatools alternative shown in a comment;
-   `residual = transform(window, DOMAIN)`;
+   `residual = transform(window, DOMAIN, num_frequency_divisions=NUM_FREQUENCY_DIVISIONS)`;
    `covariance = analytic_covariance(residual, white_psd(LEVEL))`; prints the
    grid summary (domain, channels, `N`, `fs`, `Tobs`).
 3. Markdown: step 1, the model; what `_template`, `initial_sample`, `sample`
    do, what `_check_residual` and `_check_covariance` require, and what to
    replace.
-4. Code: `from block import ForgeBlock`; `block = ForgeBlock(name="forge", frequency_hz=...)`;
+4. Code: `from block import ForgeBlock`; `block = ForgeBlock(name="forge", frequency_hz=...)`
+   marked `# EDIT: your block's configuration`;
    `assert isinstance(block, Block)`; prints the block.
 5. Markdown: step 2, exercise by hand.
-6. Code: `rng = np.random.default_rng(0)`;
-   `start = block.initial_sample(residual, covariance, rng=rng)`; asserts the
-   template keys equal the channel names, shapes equal the residual's, values
-   finite, `parameters` has `"amplitude"`;
-   `moved = block.sample(residual, covariance, start, rng=rng)`; asserts
+6. Code: a `check_state(state)` helper asserts the template keys equal the
+   channel names, shapes equal the residual's, values finite, and
+   `parameters` is a non-empty dict; `rng = np.random.default_rng(0)`;
+   `start = block.initial_sample(conditional_residual=residual, covariance=covariance, rng=rng)`
+   and `moved = block.sample(conditional_residual=residual, covariance=covariance, current_block_state=start, rng=rng)`,
+   by keyword as the Wheel calls them, each passed to `check_state`; asserts
    the sample counter advanced by one from its value before the cell (so
-   the cell can be re-run); prints both amplitudes and the
-   posterior mean and standard deviation.
+   the cell can be re-run); prints both parameter dicts and `block.state`.
+   Nothing in the cell names the placeholder's parameters, so it survives
+   a replaced model; `State.num_sample_calls` is the one diagnostic to keep.
 7. Code (optional plot): `try: import matplotlib.pyplot as plt` and plot
-   `|residual.channel_data["A"]|` and `|moved.template["A"]|` against the rfft
-   frequencies on log axes; `except ImportError: pass`.
+   `|residual|`, `|moved.template|` and the noise model's rms
+   (`sqrt(covariance.pair(ch, ch))`) for the first channel against
+   `np.fft.rfftfreq(N, dt)` on log axes; `except ImportError: plt = None`,
+   so the test can tell whether a figure was drawn.
 8. Markdown: step 3, the contract check.
 9. Code: `check_block(deepcopy(block), residual, num_cycles=3, initial_covariance=covariance, random_seed=1)`;
    asserts the sample counter is unchanged (the copy ran, not the original);
@@ -265,26 +273,32 @@ Cells, in order; code cells print one line each so the test can assert on them:
 
 ## 6. `forge/wheel.ipynb`
 
-1. Markdown: what the campaign shows; where a second block goes.
+1. Markdown: what the campaign shows; where a second block goes; why the
+   residual drops over the first cycle (the prior-draw start, not a fit).
 2. Code, settings: the same environment variables and `load_window`,
    `LEVEL`, `residual`, `covariance` lines as `block.ipynb` cell 2 (five
    lines, duplicated on purpose so each notebook runs on its own), plus
-   `TRUE_AMPLITUDE = None` for the author to fill in.
+   `TRUTH = {}` (injected parameter values by name) for the author to fill in.
 3. Code: `wheel = Wheel(residual, initial_covariance=covariance, random_seed=0)`;
    `block = ForgeBlock(name="forge", frequency_hz=...)`;
-   `wheel.add(block, data_domain=DOMAIN)`; a commented second
-   `wheel.add(...)` slot; prints the residual RMS after the start.
-4. Code: `chain = []`; `on_cycle_complete` appends
-   `wheel.ledger["forge"].parameters["amplitude"]`; `wheel.run(200, on_cycle_complete=...)`;
+   `wheel.add(block, data_domain=DOMAIN)`; prints the data's RMS first; a
+   commented second `wheel.add(..., data_domain=DOMAIN)` slot on the
+   covariance's grid, with the note that a block on another grid needs a
+   noise block publishing there (a covariance does not translate between
+   grids); prints the residual RMS after the start.
+4. Code: `chain = []`; `on_cycle_complete` appends a copy of
+   `wheel.ledger[block.name].parameters`; `wheel.run(200, on_cycle_complete=...)`;
    drops the first `WARM_UP` cycles (0: the placeholder draws the posterior
-   exactly; an MCMC sampler needs some) and prints `posterior amplitude:
-   mean +/- std over N cycles` and, when
-   `TRUE_AMPLITUDE` is set, the offset in units of the posterior standard
-   deviation; prints the residual RMS after the run.
-5. Code (optional plot): the trace of `chain`, guarded like `block.ipynb`
-   cell 7.
+   exactly; an MCMC sampler needs some) and prints `posterior <key>:
+   mean +/- std over N cycles` for every scalar parameter and, for keys in
+   `TRUTH`, the offset in units of the posterior standard deviation; prints
+   the residual RMS after the run.
+5. Code (optional plot): the full trace of every scalar parameter, one axis
+   each, with `WARM_UP` and any `TRUTH` value marked, guarded like
+   `block.ipynb` cell 7.
 6. Markdown: what to do next (replace the placeholder, register a noise
-   block before signal blocks whose starts need its covariance, run
+   block, publishing on the grid of the blocks that use it, before signal
+   blocks whose starts need its covariance, run
    independent campaigns, checkpointing is out of scope).
 
 ## 7. `tests/test_forge.py`
@@ -338,9 +352,11 @@ Skip-safe: `pytest.importorskip("h5py", reason=...)` at module level, like
   deviation to within 25 %.
 - Notebooks: every code cell of both notebooks compiles; each notebook's
   code cells run in a subprocess with the fixture's environment,
-  `MPLBACKEND=Agg`, `MPLCONFIGDIR` under the test's tmp path and `cwd=forge/`,
-  with `%`-magics stripped; the block notebook's stdout contains
-  `check_block passed`, the wheel notebook's contains `posterior amplitude:`.
+  `MPLBACKEND=Agg`, a session-scoped `MPLCONFIGDIR` and `cwd=forge/`, with
+  `%`-magics stripped and each cell compiled under its id so a traceback
+  names the cell, once with matplotlib and once with it blocked through
+  `sys.modules`; the block notebook's stdout contains `check_block passed`,
+  the wheel notebook's contains `posterior amplitude:`.
 - Real file: `@pytest.mark.skipif(not os.environ.get("ENCHILADA_MOJITO_L1"))`;
   `load_window(real, factor=10, duration_s=3600.0, domain="frequency", channels=("A", "E"))`,
   `analytic_covariance` with `white_psd`, one `ForgeBlock().initial_sample`

@@ -621,23 +621,30 @@ def test_forge_notebook_cells_compile(name):
         compile(cell_code(cell), f"{name}:cell-{index}", "exec")
 
 
-def run_notebook(name, tmp_path):
-    code = "\n\n".join(
-        cell_code(cell) for cell in notebook_cells(name) if cell["cell_type"] == "code"
+@pytest.fixture(scope="session")
+def matplotlib_config_dir(tmp_path_factory):
+    """One font cache for every notebook run, not one per test."""
+    return tmp_path_factory.mktemp("matplotlib")
+
+
+def run_notebook(name, config_dir, *, with_matplotlib):
+    """Run a notebook's code cells in one process, each compiled under its cell
+    id so a traceback names the cell; with matplotlib blocked when asked."""
+    code = "" if with_matplotlib else "import sys\nsys.modules['matplotlib'] = None\n"
+    code += "".join(
+        f"exec(compile({cell_code(cell)!r}, {cell['id']!r}, 'exec'))\n"
+        for cell in notebook_cells(name)
+        if cell["cell_type"] == "code"
     )
     code += (
-        "\nif plt is not None:\n"
+        "if plt is not None:\n"
         "    for number in plt.get_fignums():\n"
         "        plt.figure(number).canvas.draw()\n"
     )
     result = subprocess.run(
         [sys.executable, "-c", code],
         cwd=FORGE,
-        env={
-            **os.environ,
-            "MPLBACKEND": "Agg",
-            "MPLCONFIGDIR": str(tmp_path / "matplotlib"),
-        },
+        env={**os.environ, "MPLBACKEND": "Agg", "MPLCONFIGDIR": str(config_dir)},
         capture_output=True,
         text=True,
         timeout=300,
@@ -646,13 +653,28 @@ def run_notebook(name, tmp_path):
     return result.stdout
 
 
-def test_block_notebook_runs_on_the_simulated_file(simulated_file, tmp_path):
-    out = run_notebook("block.ipynb", tmp_path)
+WITH_MATPLOTLIB = pytest.mark.parametrize(
+    "with_matplotlib", [True, False], ids=["matplotlib", "no-matplotlib"]
+)
+
+
+@WITH_MATPLOTLIB
+def test_block_notebook_runs_on_the_simulated_file(
+    simulated_file, matplotlib_config_dir, with_matplotlib
+):
+    out = run_notebook(
+        "block.ipynb", matplotlib_config_dir, with_matplotlib=with_matplotlib
+    )
     assert "frequency grid, channels ('A', 'E')" in out, out
     assert "check_block passed" in out, out
 
 
-def test_wheel_notebook_runs_on_the_simulated_file(simulated_file, tmp_path):
-    out = run_notebook("wheel.ipynb", tmp_path)
+@WITH_MATPLOTLIB
+def test_wheel_notebook_runs_on_the_simulated_file(
+    simulated_file, matplotlib_config_dir, with_matplotlib
+):
+    out = run_notebook(
+        "wheel.ipynb", matplotlib_config_dir, with_matplotlib=with_matplotlib
+    )
     assert "posterior amplitude:" in out, out
     assert "residual rms after the run" in out, out

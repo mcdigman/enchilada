@@ -73,7 +73,8 @@ class ForgeBlock:
 
     @dataclass
     class State:
-        """Diagnostics owned by the block; never published to the ledger."""
+        """Diagnostics owned by the block; never published to the ledger. Keep
+        `num_sample_calls`: the notebooks assert on it."""
 
         num_sample_calls: int = 0
         last_posterior_mean: float | None = None
