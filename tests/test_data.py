@@ -1,5 +1,6 @@
 """L1Data validates channel samples, metadata, and Fourier conventions."""
 
+import inspect
 from dataclasses import replace
 
 import numpy as np
@@ -799,6 +800,13 @@ class TestBlockStateFactories:
             assert z.template[ch].shape == observed.channel_data[ch].shape
             assert z.template[ch].dtype == observed.channel_data[ch].dtype
             np.testing.assert_array_equal(z.template[ch], 0.0)
+
+    def test_zero_block_state_takes_no_covariance(self, observed):
+        assert (
+            "covariance" not in inspect.signature(observed.zero_block_state).parameters
+        )
+        with pytest.raises(TypeError):
+            observed.zero_block_state(covariance=None)
 
     def test_arrays_are_fresh_and_independent(self, observed):
         snapshot = observed.channel_data["A"].copy()

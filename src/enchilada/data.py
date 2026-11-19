@@ -452,8 +452,10 @@ class L1Data:
 
         The summed TDI signal must match this object's channels, shape, and
         real/complex representation. None means zero contribution, replacing
-        any prior signal. Optional `covariance` replaces the full covariance
-        on adoption; its compatibility is checked by Wheel, not this helper.
+        any prior signal. Optional `covariance` is the block's own noise term: a
+        block registered as noise publishes it (and no template) and Wheel adds
+        it into the campaign's noise sum; its compatibility is checked by Wheel,
+        not this helper.
 
         Physical parameters follow the `BlockState` contract.
         Supplied arrays and dictionaries are retained without copying; Wheel
@@ -478,22 +480,21 @@ class L1Data:
     def zero_block_state(
         self,
         *,
-        covariance: Covariance | None = None,
         parameters: dict[str, Any] | None = None,
     ) -> BlockState:
-        """A `BlockState` with a zero signal on this grid: nothing to subtract.
+        """A `BlockState` with a zero signal on this grid, for a signal block.
 
-        Allocates fresh zero arrays matching each channel's shape and dtype.
-        Use this when explicit arrays are useful. A source-free or noise-only
-        block can instead leave `template=None` without allocating
-        any arrays:
+        Use this when a signal block has nothing to subtract this call. It
+        allocates fresh zero arrays matching each channel's shape and dtype. A
+        source-free signal block can instead return `BlockState(parameters=...)`
+        without allocating, and a noise block returns `BlockState(covariance=...)`
+        with no template:
 
             return BlockState(parameters={"sources": []})
             return BlockState(covariance=covariance)
         """
         return self.block_state(
             {ch: np.zeros_like(arr) for ch, arr in self.channel_data.items()},
-            covariance=covariance,
             parameters=parameters,
         )
 
