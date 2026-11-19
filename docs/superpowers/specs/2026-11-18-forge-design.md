@@ -263,9 +263,10 @@ Skip-safe: `pytest.importorskip("h5py", reason=...)` at module level, like
 `tests/test_mojito.py`. Modules are loaded with `importlib` from `forge/`.
 
 - Fixture `simulated_file(tmp_path, monkeypatch)`: `write_mojito_file(tmp_path / "simulated.h5", n=...)`
-  with `n` large enough for `factor * Nf * Nt` native samples at the test's
-  settings (for example factor 4, `Nf = 8`, `Nt = 8` need 256; use 4096 so
-  the one-minute probe load fits too); sets `ENCHILADA_MOJITO_L1` to the
+  with `n = 4096` (1024 s at 4 Hz). The test settings are factor 4, a 600 s
+  window (600 decimated samples at 1 Hz) and a WDM grid `Nf = 8`, `Nt = 16`
+  (512 native samples, longer than the 315-tap anti-alias filter for factor
+  4; an `8 x 8` grid would be too short). Sets `ENCHILADA_MOJITO_L1` to the
   file, `FORGE_DURATION_S` and `FORGE_FACTOR` to values that fit it. Returns
   the path.
 - `load_window`: a time window has `fs = native / factor` and the expected
