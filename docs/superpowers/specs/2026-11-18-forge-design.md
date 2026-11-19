@@ -1,7 +1,8 @@
 # Forge: a workbench for building blocks against simulated Mojito data
 
-Date: 2026-11-18. Branch: `forge`, cut from `main` (1e2872b). Status: design
-approved in conversation, implementation not started.
+Date: 2026-11-18, sequencing updated 2026-11-19. Branch: `forge`, stacked on
+`block-initial-sample` (3831bfd, PR #9). Status: design approved in
+conversation, implementation not started.
 
 ## 1. Goal
 
@@ -19,9 +20,10 @@ The forge is written against the `initial_sample` contract (spec
 `initial_sample(conditional_residual, covariance, *, rng)` and
 `sample(conditional_residual, covariance, current_block_state, *, rng)`, and
 `Wheel.add(block, *, data_domain=None, ...)` calls `initial_sample` once at
-registration. Implementation starts after that migration (branch
-`block-initial-sample`, Tasks 4 to 6 pending) is merged into `main`; this
-branch is then rebased onto `main`.
+registration. That migration is complete on branch `block-initial-sample`,
+open as PR #9 against `main`. The forge is built stacked on it, in its own
+git worktree; the forge PR targets `block-initial-sample` and is retargeted
+to `main` once PR #9 merges (as PRs #6 to #8 were stacked).
 
 ## 2. Decisions
 
