@@ -87,7 +87,7 @@ def run_example():
         block = DomainEcho(domain, domain)
         blocks[domain] = block
         options = {"num_frequency_divisions": 8} if domain == "wdm" else {}
-        wheel.add(block, data_domain=domain, **options)
+        wheel.add(block, role="signal", data_domain=domain, **options)
     wheel.run(num_cycles=2)
 
     return {

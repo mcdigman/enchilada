@@ -21,7 +21,7 @@ import numpy as np
 from typing import assert_type
 from enchilada import (
     Block, L1Data, Covariance, BlockState, Wheel, WDMGrid, Grid,
-    transform,
+    FixedNoiseBlock, transform,
 )
 from enchilada.testing import EchoBlock, check_block
 
@@ -45,10 +45,16 @@ assert_type(transform(r, "wdm", num_frequency_divisions=2).wdm_grid, WDMGrid | N
 noise = Covariance.like(r, {"A": np.ones(8)})
 assert_type(noise.copy(), Covariance)
 assert_type(transform(BlockState(), "time"), BlockState)
-wheel = Wheel(r, noise)
-wheel.add(EchoBlock("wdm"), data_domain="wdm", num_time_divisions=2)
-wheel.add(EchoBlock("plain"))
-check_block(EchoBlock("checked"), r)
+wheel = Wheel(r)
+wheel.add(FixedNoiseBlock("noise", noise), role="noise")
+wheel.add(EchoBlock("wdm"), role="signal", data_domain="wdm", num_time_divisions=2)
+wheel.add(EchoBlock("plain"), role="signal")
+wheel.add(EchoBlock("typo"), role="nosie")   # not a Role: static error
+check_block(EchoBlock("checked"), r, role="signal")
+check_block(EchoBlock("floored"), r, role="signal",
+            noise_blocks=(FixedNoiseBlock("floor", noise),))
+check_block(FixedNoiseBlock("probe", noise), r, role="noise")
+from enchilada import NoiseOverwrittenWarning   # removed: static error
 
 class SampleOnly:
     name = "sample_only"
@@ -80,8 +86,8 @@ class FrozenBlock:
         return current_block_state
 
 frozen: Block = FrozenBlock()
-wheel.add(FrozenBlock())
-check_block(FrozenBlock(), r)
+wheel.add(FrozenBlock(), role="signal")
+check_block(FrozenBlock(), r, role="signal")
 
 @dataclass(frozen=True)
 class ExplicitBlock(Block):
@@ -101,7 +107,7 @@ class ExplicitBlock(Block):
         return current_block_state
 
 explicit: Block = ExplicitBlock("explicit")
-wheel.add(explicit)
+wheel.add(explicit, role="signal")
 """
 
 
@@ -120,15 +126,20 @@ def test_consumer_typos_are_static_errors(tmp_path):
     out = proc.stdout + proc.stderr
     assert 'has no attribute "Tobbs"' in out, out
     assert 'has no attribute "T_obs"' in out, out
-    # exactly the two typos -- the correct `r.Tobs` on the preceding line must
-    # not be flagged (an over-broad ban would break legitimate access)
-    assert out.count("[attr-defined]") == 2, out
+    # exactly the two typos plus the removed NoiseOverwrittenWarning import --
+    # the correct `r.Tobs` on the preceding line must not be flagged (an
+    # over-broad ban would break legitimate access)
+    assert out.count("[attr-defined]") == 3, out
     # ... and a class without initial_sample is not a Block
     assert (
         'Incompatible types in assignment (expression has type "SampleOnly", '
         'variable has type "Block")'
     ) in out, out
-    assert out.count("error:") == 3, out
+    # ... a misspelt role is a static error ...
+    assert 'Argument "role" to "add" of "Wheel" has incompatible type' in out, out
+    # ... and the removed warning class is not importable
+    assert 'has no attribute "NoiseOverwrittenWarning"' in out, out
+    assert out.count("error:") == 5, out
 
 
 @pytest.mark.skipif(
@@ -238,7 +249,7 @@ def test_frozen_dataclass_can_explicitly_inherit_block():
         physical_observable="strain",
     )
     wheel = Wheel(observations)
-    wheel.add(block)
+    wheel.add(block, role="signal")
     wheel.run(1)
     assert wheel.ledger["explicit"].parameters == {"value": 1}
 
@@ -261,9 +272,9 @@ def test_public_surface_is_pinned():
     assert enchilada.__all__ == [
         "Block",
         "Covariance",
+        "FixedNoiseBlock",
         "Grid",
         "Ledger",
-        "NoiseOverwrittenWarning",
         "NumericOrbit",
         "Orbit",
         "L1Data",

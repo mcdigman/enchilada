@@ -36,9 +36,9 @@ jobs:
       - name: Notebook tests need matplotlib (it arrives with lisaorbits)
         run: uv run --no-sync python -c "import matplotlib"
       - name: Lint
-        run: uv run --no-sync ruff check src tests examples benchmarks
+        run: uv run --no-sync ruff check src tests examples benchmarks forge
       - name: Format
-        run: uv run --no-sync ruff format --check src tests examples benchmarks
+        run: uv run --no-sync ruff format --check src tests examples benchmarks forge
       - name: Type-check
         # enchilada ships py.typed, so its annotations are load-bearing for
         # consumers' type checkers -- validate them here

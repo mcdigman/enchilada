@@ -41,7 +41,7 @@ def test_block_tutorial_runs_and_checks_its_sampler(tmp_path):
     assert "Posterior checks passed" in result.stdout
     assert "Continuation and isolation checks passed" in result.stdout
     assert "PSD construction checks passed" in result.stdout
-    assert "Noise-only block checks passed" in result.stdout
+    assert "Noise block checks passed" in result.stdout
 
 
 @pytest.fixture
@@ -125,6 +125,37 @@ def test_tutorial_rejection_returns_retained_signal_and_complete_state(
     assert block.state.num_proposals == 8
     assert block.state.num_acceptances == 0
     assert not hasattr(result, "sampler_state")
+
+
+def test_tutorial_noise_block_refuses_another_noise_block(tutorial_definitions):
+    import numpy as np
+
+    from conftest import white_covariance
+    from enchilada import FixedNoiseBlock, L1Data, Wheel
+
+    data = L1Data(
+        channel_data={"A": np.zeros(64)},
+        channel_names=("A",),
+        sample_rate_hz=1.0,
+        tdi_generation="2.0",
+        physical_observable="fractional_frequency",
+    )
+    floor = white_covariance(data, 0.2)
+    WhiteNoiseVarianceBlock = tutorial_definitions.WhiteNoiseVarianceBlock
+
+    # Registered second, its start already receives the floor's covariance.
+    second = Wheel(data, random_seed=0)
+    second.add(FixedNoiseBlock("floor", floor), role="noise")
+    with pytest.raises(ValueError, match="only noise block"):
+        second.add(WhiteNoiseVarianceBlock(), role="noise")
+
+    # Registered first, it starts alone; the floor registered after it reaches
+    # it at its first sample.
+    first = Wheel(data, random_seed=0)
+    first.add(WhiteNoiseVarianceBlock(), role="noise")
+    first.add(FixedNoiseBlock("floor", floor), role="noise")
+    with pytest.raises(ValueError, match="only noise block"):
+        first.run(1)
 
 
 def test_tutorial_block_instances_keep_independent_diagnostics(tutorial_definitions):

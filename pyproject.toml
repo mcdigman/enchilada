@@ -83,6 +83,9 @@ source-include = [
     "examples/**/*.py",
     "examples/**/*.ipynb",
     "examples/**/*.txt",
+    "forge/**/*.py",
+    "forge/**/*.ipynb",
+    "forge/**/*.md",
     "docs/**/*.svg",
     "benchmarks/**/*.py",
     ".github/workflows/*.yml",
@@ -116,9 +119,8 @@ fail_under = 95
 
 [tool.ruff]
 line-length = 88
-src = ["src", "tests", "examples", "benchmarks"]
+src = ["src", "tests", "examples", "benchmarks", "forge"]
 output-prefer-rule-codes = true
-
 
 [tool.ruff.lint]
 # E5 = line length
@@ -144,6 +146,7 @@ unfixable = ["F841"]
 "tests/*.py" = ["S403", "S404", "S603", "ANN", "PLW1510"]
 "examples/*.py" = ["ANN"]
 "benchmarks/*.py" = ["ANN"]
+"forge/*.ipynb" = ["ANN"]
 
 [tool.ruff.format]
 exclude = ["docs/**"]

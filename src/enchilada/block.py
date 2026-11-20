@@ -15,24 +15,28 @@ class Block(Protocol):
 
     Keep sampler continuation and diagnostics in a block-owned State object.
     BlockState contains only template, covariance, and physical parameters.
-    `Wheel.add` calls `initial_sample` once with the block's starting inputs and
+    `Wheel.add(block, role=...)` registers a block as a signal block or a noise
+    block, calls `initial_sample` once with the block's starting inputs and
     adopts the returned state; `sample` then advances the latest accepted
     `current_block_state` and returns a complete new state. Both receive the
-    conditional residual on the block's registered grid, the covariance when
-    the campaign has one, and the campaign RNG. A block that starts at a known
+    conditional residual on the block's registered grid, the covariance the
+    block's role receives, and the campaign RNG. A block that starts at a known
     point takes that point in its constructor and returns it from
     `initial_sample`; a block that starts from its prior draws from `rng`.
 
     `conditional_residual` is the observed data minus every OTHER block's current
     signal; this block's signal is still present. The block does not perform
-    cross-block subtraction or add-back. `covariance` is the current
-    `Covariance` on the same grid as `conditional_residual`, or None.
+    cross-block subtraction or add-back. `covariance` is a `Covariance` on the
+    same grid as `conditional_residual`, or None: for a signal block the sum
+    over every noise block, for a noise block the sum over the other noise
+    blocks (its own last publication is on `current_block_state.covariance`).
 
-    Signal-only, noise-only, and joint models share this interface. A None signal
-    means zero contribution, replacing any previous signal.
-    The current covariance owner must return its complete covariance every call;
-    other blocks can omit covariance without changing it. Wheel keeps one
-    covariance owner; publish combined noise components together.
+    Signal and noise blocks share this interface; the role given at `Wheel.add`
+    says which one a block is. A signal block publishes a template (None means
+    zero contribution, replacing any previous signal) and never a covariance.
+    A noise block publishes its complete covariance on every call and never a
+    template; Wheel adds the noise blocks' covariances, so each block publishes
+    only its own component. A joint model is two blocks.
 
     Each call, `initial_sample` included, receives independent snapshots of the
     conditional residual, covariance, and current state. Use the supplied RNG;

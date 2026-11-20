@@ -36,8 +36,8 @@ ucb = EchoBlock(name="ucb")
 mbhb = EchoBlock(name="mbhb")
 
 wheel = Wheel(observed, random_seed=0)
-wheel.add(ucb)
-wheel.add(mbhb)
+wheel.add(ucb, role="signal")
+wheel.add(mbhb, role="signal")
 
 wheel.run(num_cycles=3)
 

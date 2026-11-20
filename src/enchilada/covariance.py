@@ -373,6 +373,32 @@ class Covariance:
                 f"{data.grid}"
             )
 
+    # ---- arithmetic -------------------------------------------------------
+
+    def __add__(self, other: object) -> "Covariance":
+        """The elementwise sum of two covariances on one grid: a new Covariance.
+
+        Both operands must carry the same grid and channel order. The result is
+        validated like any construction, so a sum of positive-definite terms is
+        checked positive definite again rather than assumed. This is how a noise
+        block forms the other blocks' sum plus its own model for its likelihood.
+        """
+        if not isinstance(other, Covariance):
+            return NotImplemented
+        if other.grid != self.grid:
+            raise ValueError(
+                f"cannot add a covariance on grid {other.grid} to one on grid "
+                f"{self.grid}; a covariance does not add across grids"
+            )
+        if other.channel_names != self.channel_names:
+            raise ValueError(
+                f"cannot add a covariance with channel_names {other.channel_names} "
+                f"to one with channel_names {self.channel_names}"
+            )
+        with np.errstate(over="ignore"):
+            blocks = self.blocks + other.blocks
+        return Covariance(blocks, channel_names=self.channel_names, grid=self.grid)
+
     # ---- copies -----------------------------------------------------------
 
     def copy(self) -> "Covariance":

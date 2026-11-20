@@ -5,7 +5,7 @@ from dataclasses import dataclass, replace
 import numpy as np
 import pytest
 
-from conftest import make_observed, starting_at, white_covariance
+from conftest import const_block_state, make_observed, starting_at, white_covariance
 from enchilada import BlockState, Wheel
 
 
@@ -95,23 +95,13 @@ def test_valid_rfft_signal_preserves_all_allowed_components(observed, num_time_s
             return current_block_state
 
     wheel = Wheel(observed)
-    wheel.add(starting_at(Signal(), observed.block_state(template=signal)))
+    wheel.add(
+        starting_at(Signal(), observed.block_state(template=signal)), role="signal"
+    )
     wheel.run(1)
     np.testing.assert_array_equal(wheel.contribution("signal")["A"], signal["A"])
     np.testing.assert_array_equal(
         wheel.working_residual.channel_data["A"], -signal["A"]
-    )
-
-
-def noise_start(observed, *, signal_value):
-    signal = {
-        ch: np.full_like(samples, signal_value)
-        for ch, samples in observed.channel_data.items()
-    }
-    return observed.block_state(
-        template=signal,
-        covariance=white_covariance(observed, 1),
-        parameters={"variance": 1},
     )
 
 
@@ -142,6 +132,39 @@ class NoiseOnly:
         )
 
 
+class SignalOnly:
+    name = "signal"
+
+    @dataclass
+    class State:
+        steps: int = 0
+        draw: float = 0.0
+
+    def __init__(self):
+        self.state = self.State()
+
+    def initial_sample(self, conditional_residual, covariance, *, rng):
+        return conditional_residual.block_state(
+            template={
+                ch: np.full_like(samples, 0.5)
+                for ch, samples in conditional_residual.channel_data.items()
+            },
+            parameters={"amplitude": 0.5},
+        )
+
+    def sample(self, conditional_residual, covariance, current_block_state, *, rng):
+        self.state.steps += 1
+        self.state.draw = rng.normal()
+        amplitude = current_block_state.parameters["amplitude"] + 0.5
+        return conditional_residual.block_state(
+            template={
+                ch: np.full_like(samples, amplitude)
+                for ch, samples in conditional_residual.channel_data.items()
+            },
+            parameters={"amplitude": amplitude},
+        )
+
+
 @pytest.mark.parametrize(
     "num_time_samples,index,endpoint",
     [(1, 0, "DC"), (4, 0, "DC"), (4, -1, "Nyquist"), (5, 0, "DC")],
@@ -156,34 +179,30 @@ def test_rejected_rfft_signal_preserves_estimates_state_and_rng(
     ).to_frequency()
     fail = [True]
 
-    class InvalidOnce(NoiseOnly):
+    class InvalidOnce(SignalOnly):
         def sample(self, conditional_residual, covariance, current_block_state, *, rng):
             result = super().sample(
                 conditional_residual, covariance, current_block_state, rng=rng
             )
             if fail[0]:
                 fail[0] = False
-                signal = {
-                    ch: np.full_like(samples, 0.25)
-                    for ch, samples in conditional_residual.channel_data.items()
-                }
+                signal = {ch: samples.copy() for ch, samples in result.template.items()}
                 signal["A"][index] += 1j
                 return replace(result, template=signal)
             return result
 
     actual, expected = Wheel(observed, random_seed=8), Wheel(observed, random_seed=8)
-    initial = noise_start(observed, signal_value=0.5)
-    actual_block, expected_block = InvalidOnce(), NoiseOnly()
-    actual.add(starting_at(actual_block, initial))
-    expected.add(starting_at(expected_block, initial))
+    actual_block, expected_block = InvalidOnce(), SignalOnly()
+    actual.add(actual_block, role="signal")
+    expected.add(expected_block, role="signal")
     with pytest.raises(ValueError, match=rf"{endpoint}.*real"):
         actual.run(1)
     assert actual_block.state.steps == 1
     assert expected_block.state.steps == 0
-    assert actual.ledger["noise"].parameters == expected.ledger["noise"].parameters
-    assert actual.ledger["noise"].parameters == {"variance": 1}
-    np.testing.assert_array_equal(actual.covariance.A, white_covariance(observed, 1).A)
-    np.testing.assert_array_equal(actual.contribution("noise")["A"], 0.5)
+    assert actual.ledger["signal"].parameters == expected.ledger["signal"].parameters
+    assert actual.ledger["signal"].parameters == {"amplitude": 0.5}
+    assert actual.covariance is None
+    np.testing.assert_array_equal(actual.contribution("signal")["A"], 0.5)
     np.testing.assert_array_equal(actual.working_residual.channel_data["A"], -0.5)
 
     actual.run(1)
@@ -191,9 +210,8 @@ def test_rejected_rfft_signal_preserves_estimates_state_and_rng(
     assert actual_block.state.steps == 2
     assert expected_block.state.steps == 1
     assert actual_block.state.draw == expected_block.state.draw
-    assert actual.ledger["noise"].parameters == expected.ledger["noise"].parameters
-    np.testing.assert_array_equal(actual.covariance.A, white_covariance(observed, 2).A)
-    np.testing.assert_array_equal(actual.working_residual.channel_data["A"], 0.0)
+    assert actual.ledger["signal"].parameters == expected.ledger["signal"].parameters
+    np.testing.assert_array_equal(actual.working_residual.channel_data["A"], -1.0)
 
 
 @pytest.mark.parametrize("domain", ["time", "frequency"])
@@ -202,7 +220,7 @@ def test_noise_only_result_preserves_data_without_signal_arrays(observed, domain
         observed = observed.to_frequency()
     wheel = Wheel(observed, random_seed=3)
     block = NoiseOnly()
-    wheel.add(block)
+    wheel.add(block, role="noise")
     wheel.run(2)
 
     result = wheel.ledger["noise"]
@@ -262,9 +280,9 @@ def test_absent_signal_removes_previous_contribution_and_can_return(observed, do
             return population_start(conditional_residual)
 
     wheel = Wheel(observed)
-    wheel.add(NoiseOnly())
+    wheel.add(NoiseOnly(), role="noise")
     population = Population()
-    wheel.add(population)
+    wheel.add(population, role="signal")
     np.testing.assert_allclose(
         wheel.working_residual.channel_data["A"], observed.channel_data["A"] - 0.25
     )
@@ -283,10 +301,15 @@ def test_absent_signal_removes_previous_contribution_and_can_return(observed, do
     )
 
 
-@pytest.mark.parametrize("failure", ["omitted", "wrong_grid"])
-def test_rejected_noise_result_preserves_signal_covariance_state_and_rng(
-    observed, failure
-):
+class Baseline:
+    name = "baseline"
+
+    def sample(self, conditional_residual, covariance, current_block_state, *, rng):
+        return current_block_state
+
+
+@pytest.mark.parametrize("failure", ["omitted", "wrong_grid", "template"])
+def test_rejected_noise_result_preserves_covariance_state_and_rng(observed, failure):
     fail = [True]
 
     class FailsOnce(NoiseOnly):
@@ -296,28 +319,45 @@ def test_rejected_noise_result_preserves_signal_covariance_state_and_rng(
             )
             if fail[0]:
                 fail[0] = False
-                covariance = None
-                if failure == "wrong_grid":
-                    wrong_grid = make_observed(
-                        np.random.default_rng(0), num_time_samples=32
+                if failure == "omitted":
+                    return replace(result, covariance=None)
+                if failure == "template":
+                    return replace(
+                        result,
+                        template={
+                            ch: np.full_like(samples, 0.5)
+                            for ch, samples in conditional_residual.channel_data.items()
+                        },
                     )
-                    covariance = white_covariance(wrong_grid, 2)
-                return replace(result, covariance=covariance)
+                wrong_grid = make_observed(
+                    np.random.default_rng(0), num_time_samples=32
+                )
+                return replace(result, covariance=white_covariance(wrong_grid, 2))
             return result
 
     actual, expected = Wheel(observed, random_seed=8), Wheel(observed, random_seed=8)
-    initial = noise_start(observed, signal_value=0.5)
     actual_block, expected_block = FailsOnce(), NoiseOnly()
-    actual.add(starting_at(actual_block, initial))
-    expected.add(starting_at(expected_block, initial))
-    error = "must return.*covariance" if failure == "omitted" else "grid"
+    for wheel, block in ((actual, actual_block), (expected, expected_block)):
+        # A constant signal gives the residual a non-zero baseline to preserve.
+        wheel.add(
+            starting_at(Baseline(), const_block_state(observed, 0.5)), role="signal"
+        )
+        wheel.add(block, role="noise")
+    error = {
+        "omitted": (
+            "must return a covariance because 'noise' is registered as a noise block"
+        ),
+        "template": "returned a template but 'noise' is registered as a noise block",
+        "wrong_grid": "grid",
+    }[failure]
     with pytest.raises(ValueError, match=error):
         actual.run(1)
     assert actual_block.state.steps == 1
     assert expected_block.state.steps == 0
     assert actual.ledger["noise"].parameters == expected.ledger["noise"].parameters
     np.testing.assert_array_equal(actual.covariance.A, white_covariance(observed, 1).A)
-    np.testing.assert_array_equal(actual.contribution("noise")["A"], 0.5)
+    np.testing.assert_array_equal(actual.contribution("noise")["A"], 0.0)
+    np.testing.assert_array_equal(actual.contribution("baseline")["A"], 0.5)
     np.testing.assert_allclose(
         actual.working_residual.channel_data["A"], observed.channel_data["A"] - 0.5
     )
@@ -329,6 +369,6 @@ def test_rejected_noise_result_preserves_signal_covariance_state_and_rng(
     assert actual.ledger["noise"].parameters == expected.ledger["noise"].parameters
     assert actual.ledger["noise"].template is None
     np.testing.assert_array_equal(actual.covariance.A, white_covariance(observed, 2).A)
-    np.testing.assert_array_equal(
-        actual.working_residual.channel_data["A"], observed.channel_data["A"]
+    np.testing.assert_allclose(
+        actual.working_residual.channel_data["A"], observed.channel_data["A"] - 0.5
     )
