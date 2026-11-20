@@ -83,6 +83,9 @@ source-include = [
     "examples/**/*.py",
     "examples/**/*.ipynb",
     "examples/**/*.txt",
+    "forge/**/*.py",
+    "forge/**/*.ipynb",
+    "forge/**/*.md",
     "docs/**/*.svg",
     "benchmarks/**/*.py",
     ".github/workflows/*.yml",
@@ -116,7 +119,7 @@ fail_under = 95
 
 [tool.ruff]
 line-length = 88
-src = ["src", "tests", "examples", "benchmarks"]
+src = ["src", "tests", "examples", "benchmarks", "forge"]
 
 [tool.ruff.lint]
 select = ["E4", "E5", "E7", "E9", "F", "I", "B", "UP"]  # E5 = line length
