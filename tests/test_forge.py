@@ -498,12 +498,20 @@ def test_block_refuses_inputs_its_likelihood_cannot_use(
 def test_forge_block_passes_check_block_on_the_simulated_window(
     simulated_file, forge_data, forge_block
 ):
+    from enchilada import FixedNoiseBlock
     from enchilada.testing import check_block
 
     spectrum = simulated_spectrum(forge_data, simulated_file)
     noise = forge_data.analytic_covariance(spectrum, forge_data.white_psd(2e-36))
     block = forge_block.ForgeBlock(frequency_hz=0.05)
-    check_block(block, spectrum, num_cycles=3, initial_covariance=noise, random_seed=1)
+    check_block(
+        block,
+        spectrum,
+        num_cycles=3,
+        role="signal",
+        noise_blocks=(FixedNoiseBlock("noise", noise),),
+        random_seed=1,
+    )
     assert block.state.num_sample_calls == 3
     assert np.isfinite(block.state.last_posterior_std)
 
@@ -550,7 +558,7 @@ def test_inner_product_matches_the_time_domain_sum(
 def test_forge_block_recovers_an_injected_amplitude(
     simulated_file, forge_data, forge_block
 ):
-    from enchilada import Wheel
+    from enchilada import FixedNoiseBlock, Wheel
 
     window = forge_data.load_window(
         simulated_file, factor=FACTOR, duration_s=DURATION_S, channels=("A", "E")
@@ -569,8 +577,9 @@ def test_forge_block_recovers_an_injected_amplitude(
         },
     )
     noise = forge_data.analytic_covariance(observed, forge_data.white_psd(level))
-    wheel = Wheel(observed, initial_covariance=noise, random_seed=3)
-    wheel.add(block, data_domain="frequency")
+    wheel = Wheel(observed, random_seed=3)
+    wheel.add(FixedNoiseBlock("noise", noise), role="noise")
+    wheel.add(block, role="signal", data_domain="frequency")
     chain = []
     wheel.run(
         300,

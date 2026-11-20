@@ -18,7 +18,7 @@ class AmplitudeUpdate:
 
 def test_ledger_identity_is_reflexive_and_snapshots_are_stable(observed):
     wheel = Wheel(observed)
-    wheel.add(AmplitudeUpdate())
+    wheel.add(AmplitudeUpdate(), role="signal")
     assert wheel.ledger == wheel.ledger
     snapshot = wheel.ledger.snapshot()
     entry = snapshot["amplitudes"]
@@ -35,5 +35,5 @@ def test_ledger_identity_is_reflexive_and_snapshots_are_stable(observed):
 def test_empty_and_populated_snapshot_names_follow_registration(observed):
     wheel = Wheel(observed)
     assert wheel.ledger.snapshot() == {}
-    wheel.add(AmplitudeUpdate())
+    wheel.add(AmplitudeUpdate(), role="signal")
     assert list(wheel.ledger.snapshot()) == list(wheel.ledger) == ["amplitudes"]

@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from conftest import white_covariance
-from enchilada import Covariance, L1Data, Wheel, transform
+from enchilada import Covariance, FixedNoiseBlock, L1Data, Wheel, transform
 
 
 @pytest.fixture
@@ -131,12 +131,11 @@ def test_gb_frequency_registration_reads_its_native_frequency_covariance(
     data, noise = spectral_context
     options = {"num_frequency_divisions": 8} if storage_domain == "wdm" else {}
     observed = transform(data, storage_domain, **options)
-    wheel = Wheel(
-        observed,
-        initial_covariance=noise,
-        random_seed=0,
-    )
+    wheel = Wheel(observed, random_seed=0)
+    # Noise registers first: GBBlock.initial_sample needs the covariance.
+    wheel.add(FixedNoiseBlock("noise", noise), role="noise", data_domain="frequency")
     block = make_block(gb_model)
+    seen_psds = []
 
     class ContextProbe:
         """Check the GB likelihood inputs without requiring optional Eryn."""
@@ -144,14 +143,18 @@ def test_gb_frequency_registration_reads_its_native_frequency_covariance(
         name = block.name
 
         def initial_sample(self, conditional_residual, covariance, *, rng):
+            seen_psds.append(block._context(conditional_residual, covariance)[1]["A"])
             return block.initial_sample(conditional_residual, covariance, rng=rng)
 
         def sample(self, conditional_residual, covariance, current_block_state, *, rng):
-            block._context(conditional_residual, covariance)
+            seen_psds.append(block._context(conditional_residual, covariance)[1]["A"])
             return current_block_state
 
-    wheel.add(ContextProbe(), data_domain="frequency")
+    wheel.add(ContextProbe(), role="signal", data_domain="frequency")
     wheel.run(1)
+    assert len(seen_psds) == 2
+    for psd in seen_psds:
+        np.testing.assert_allclose(psd, 2.0 * noise.pair("A", "A") / data.Tobs)
     assert wheel.covariance.grid == data.grid
     result = wheel.ledger["gb"]
     assert result.template["A"].shape == observed.channel_data["A"].shape

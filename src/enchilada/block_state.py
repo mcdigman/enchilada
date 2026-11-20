@@ -24,10 +24,10 @@ class BlockState:
     Sampler continuation state, diagnostics, and resources belong to the block's
     own State object; they are not published to the ledger.
 
-    `covariance` is a Covariance replacing the current noise model; components
-    are not summed. A signal block can omit it. The current covariance owner
-    must supply its complete covariance on every call, on the grid of the data
-    it received. A noise-only state needs no signal arrays.
+    `covariance` is this block's contribution to the noise sum: a noise block
+    supplies its complete covariance on every call, on the grid of the data it
+    received, and Wheel adds the noise blocks' covariances; a signal block
+    leaves it None. A noise block's state carries no signal arrays.
     Data conventions and orbit stay with L1Data.
     Construction checks the container; Wheel checks the grid and finiteness.
     """

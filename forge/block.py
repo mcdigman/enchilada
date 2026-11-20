@@ -100,7 +100,7 @@ class ForgeBlock:
         if conditional_residual.data_domain != "frequency":
             raise ValueError(
                 f"{self.name}: needs frequency-grid data (register it with "
-                "Wheel.add(..., data_domain='frequency') or pass "
+                "Wheel.add(..., role='signal', data_domain='frequency') or pass "
                 f"transform(data, 'frequency')); got "
                 f"{conditional_residual.data_domain!r} data"
             )
@@ -115,7 +115,10 @@ class ForgeBlock:
     ) -> Covariance:
         # EDIT: what your likelihood needs from the noise model.
         if covariance is None:
-            raise ValueError(f"{self.name}: the likelihood needs a noise covariance")
+            raise ValueError(
+                f"{self.name}: the likelihood needs a noise covariance; register a "
+                "noise block (a FixedNoiseBlock for a known PSD) before this block"
+            )
         covariance.check_compatible(conditional_residual)
         channels = conditional_residual.channel_names
         if any(

@@ -28,9 +28,29 @@ All notable changes to enchilada are documented here. The format follows
 - `Block.initial_sample(conditional_residual, covariance, *, rng)`: every
   block draws or constructs its own start. `Wheel.add` calls it once with the
   observations minus the starts of the blocks registered so far, on the
-  block's grid, the current covariance and the campaign RNG, and adopts the
-  result through the same validation as a `sample` return; a block without it
-  is refused with `TypeError`. `EchoBlock` publishes an empty start.
+  block's grid, the covariance its role receives and the campaign RNG, and
+  adopts the result through the same validation as a `sample` return; a block
+  without it is refused with `TypeError`. `EchoBlock` publishes an empty start.
+- `Wheel.add(block, *, role=...)`: every block is registered as `"signal"` or
+  `"noise"`. Wheel sums the noise blocks' covariances the way it sums the
+  signal blocks' templates: a signal block receives the sum over every noise
+  block, a noise block the sum over the other noise blocks (`None` when it is
+  alone) with its own last publication on `current_block_state.covariance`,
+  and `wheel.covariance` is the whole sum. A signal block that returns a
+  covariance, or a noise block that returns a template or omits its
+  covariance, is refused with `ValueError` naming the block, the method and
+  the role; the campaign is left unchanged.
+- `FixedNoiseBlock(name, covariance)`: a noise block that publishes one
+  configured covariance on every call; the way to give a campaign a known
+  noise model.
+- `Covariance.__add__`: `noise_a + noise_b` adds two covariances on one grid
+  with one channel order, validated like any construction; mismatches raise
+  `ValueError`.
+- `check_block(block_under_test, observed_data, num_cycles=2, *, role,
+  noise_blocks=(), random_seed=0)`: `role` is required and `noise_blocks` are
+  registered first with `role="noise"`.
+- `examples/noise_floor.py`: a known floor (`FixedNoiseBlock`) plus a sampled
+  excess variance as two noise blocks, with `tests/test_noise_floor_example.py`.
 - `forge/`: a workbench for building blocks against simulated Mojito-layout
   L1 data. `forge/data.py` loads a decimated window onto the time, frequency
   or WDM grid (`load_window`) and builds a `Covariance` from an analytic PSD
@@ -78,13 +98,22 @@ All notable changes to enchilada are documented here. The format follows
   start draws from `rng`, and a block registered on another grid than the
   current covariance is refused at `add`, before `initial_sample` is called.
   Under `check_block`, construct the block with its start.
-- `Wheel(initial_covariance=...)` accepts a covariance on any grid of the same
-  record (same sample count and sample rate), not only the observation grid.
-- Wheel holds one covariance on the grid its owner published it on and hands a
-  deep copy to blocks registered on that grid. A block on another grid is
-  refused at `add` or `run` with `ValueError` naming both grids; a start or
-  returned covariance on another grid than its block's is refused at `add` or
-  `run`.
+- **Breaking:** `Wheel.add` and `check_block` require the `role` keyword; the
+  single covariance owner is gone. Wheel holds the noise sum on the grid of the
+  first noise publication and hands a deep copy to blocks registered on that
+  grid. A noise block on another grid is refused at `add`, before its
+  `initial_sample`, with `ValueError` ("a covariance does not add across
+  grids"); a signal block on another grid is refused at `add` or `run` as
+  before; a covariance a noise block returns on another grid than its own is
+  refused at `add` or `run`. A joint signal-and-noise model becomes two blocks,
+  one per role.
+- The tutorial's `WhiteNoiseVarianceBlock` and `examples/toy_fit.py`'s
+  `WhiteNoiseBlock` model the whole noise and refuse to run beside another
+  noise block.
+- `benchmarks/benchmark_wheel.py` runs one `FixedNoiseBlock` beside the fixed
+  signals and reports `"noise_blocks": 1`. Every noise publication, an
+  unchanged one included, is revalidated each cycle, so its timings are not
+  comparable with runs from before the noise sum.
 - `transform` takes `L1Data` or `BlockState` only; a `BlockState` carries its
   covariance through unchanged.
 - The examples and notebooks build covariances with `like` from the convention
@@ -108,6 +137,14 @@ All notable changes to enchilada are documented here. The format follows
   - `noise_variance(ch, data)` → `noise.pair(ch, ch)` on time data.
 - The covariance overload of `transform` with its `reference_data`, the
   covariance translation seam and every `NotImplementedError` in the package.
+- `Wheel(initial_covariance=...)` and the positional covariance argument: a
+  known noise model is a `FixedNoiseBlock` registered with `role="noise"`.
+- `NoiseOverwrittenWarning` and the "owner must republish" rule: noise blocks
+  add, and each republishes into its own slot of the sum.
+- `L1Data.zero_block_state(covariance=...)`: a zero template plus a covariance
+  is refused for either role; a noise block returns `BlockState(covariance=...)`.
+- `check_block(initial_covariance=...)`: pass
+  `noise_blocks=(FixedNoiseBlock(name, covariance),)` instead.
 
 ## [0.3.0] — Unreleased
 

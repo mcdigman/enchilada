@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from conftest import starting_at, white_covariance
-from enchilada import BlockState, Covariance, WDMGrid, Wheel
+from enchilada import BlockState, Covariance, FixedNoiseBlock, WDMGrid, Wheel
 from enchilada.translation import transform
 
 
@@ -49,9 +49,10 @@ def test_omitted_domain_and_explicit_same_domain_both_receive_the_covariance(obs
             received.append(("sample", self.name, conditional_residual.data_domain))
             return current_block_state
 
-    wheel = Wheel(observed, white_covariance(observed, 2.0))
-    wheel.add(RecordInputs("default"))
-    wheel.add(RecordInputs("explicit"), data_domain="time")
+    wheel = Wheel(observed)
+    wheel.add(FixedNoiseBlock("noise", white_covariance(observed, 2.0)), role="noise")
+    wheel.add(RecordInputs("default"), role="signal")
+    wheel.add(RecordInputs("explicit"), role="signal", data_domain="time")
     assert received == []
     wheel.run(1)
     assert received == [("sample", "default", "time"), ("sample", "explicit", "time")]
@@ -83,8 +84,11 @@ def test_same_grid_block_receives_the_covariance_without_transform(
             received.append(float(covariance.A[0]))
             return current_block_state
 
-    wheel = Wheel(observed, white_covariance(observed, 2.0))
-    wheel.add(starting_at(RecordCovariance(), BlockState()), data_domain="time")
+    wheel = Wheel(observed)
+    wheel.add(FixedNoiseBlock("noise", white_covariance(observed, 2.0)), role="noise")
+    wheel.add(
+        starting_at(RecordCovariance(), BlockState()), role="signal", data_domain="time"
+    )
     wheel.run(2)
     assert received == [2.0, 2.0]
 
@@ -128,6 +132,7 @@ def test_rejected_translated_output_rolls_back_mutated_inputs_and_rng(
                     parameters={"amplitude": 0.0, "coordinates": np.array([3.0])}
                 ),
             ),
+            role="signal",
             data_domain="frequency",
         )
     previous_amplitude = actual.ledger["mutate"].parameters["amplitude"]

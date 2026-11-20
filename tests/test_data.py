@@ -1,12 +1,13 @@
 """L1Data validates channel samples, metadata, and Fourier conventions."""
 
+import inspect
 from dataclasses import replace
 
 import numpy as np
 import pytest
 
 from conftest import make_observed, white_covariance
-from enchilada import BlockState, L1Data, Wheel, transform
+from enchilada import BlockState, FixedNoiseBlock, L1Data, Wheel, transform
 
 
 class TestConstructorSettings:
@@ -41,7 +42,8 @@ class TestConstructorSettings:
             channel_data={"A": data.channel_data["A"], "E": data.channel_data["E"]},
         )
         covariance = white_covariance(data, {"A": 1.0, "E": 4.0})
-        wheel = Wheel(reordered, covariance)
+        wheel = Wheel(reordered)
+        wheel.add(FixedNoiseBlock("noise", covariance), role="noise")
         assert wheel.observed_data.channel_names == ("E", "A")
         assert reordered.to_frequency().to_time().channel_names == ("E", "A")
 
@@ -798,6 +800,13 @@ class TestBlockStateFactories:
             assert z.template[ch].shape == observed.channel_data[ch].shape
             assert z.template[ch].dtype == observed.channel_data[ch].dtype
             np.testing.assert_array_equal(z.template[ch], 0.0)
+
+    def test_zero_block_state_takes_no_covariance(self, observed):
+        assert (
+            "covariance" not in inspect.signature(observed.zero_block_state).parameters
+        )
+        with pytest.raises(TypeError):
+            observed.zero_block_state(covariance=None)
 
     def test_arrays_are_fresh_and_independent(self, observed):
         snapshot = observed.channel_data["A"].copy()

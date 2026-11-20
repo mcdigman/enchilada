@@ -6,12 +6,13 @@ from enchilada.block_state import BlockState
 from enchilada.covariance import Covariance
 from enchilada.data import L1Data
 from enchilada.domains import Grid, WDMGrid
+from enchilada.fixed_noise import FixedNoiseBlock
 from enchilada.ledger import Ledger
 from enchilada.mojito import load_mojito_l1
 from enchilada.orbits import NumericOrbit, Orbit
 from enchilada.resample import decimate
 from enchilada.translation import transform
-from enchilada.wheel import NoiseOverwrittenWarning, Wheel
+from enchilada.wheel import Wheel
 
 try:
     __version__ = version("enchilada")
@@ -21,9 +22,9 @@ except PackageNotFoundError:  # pragma: no cover - source tree without install
 __all__ = [
     "Block",
     "Covariance",
+    "FixedNoiseBlock",
     "Grid",
     "Ledger",
-    "NoiseOverwrittenWarning",
     "NumericOrbit",
     "Orbit",
     "L1Data",

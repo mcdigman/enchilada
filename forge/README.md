@@ -18,11 +18,13 @@ this folder assumes you have read it.
    before you change a line.
 2. **Run `block.ipynb`.** It loads a window of the simulated file, builds the
    covariance, calls `initial_sample` and `sample` by hand with asserts on
-   the returned state, and runs `check_block`. Edits to `block.py` take
-   effect cell by cell.
-3. **Run `wheel.ipynb`.** A `Wheel` on the same window, the block registered
-   on its grid, a chain collected through `on_cycle_complete`, the posterior
-   against a truth you type in, and a trace plot.
+   the returned state, and runs `check_block` with the covariance as a
+   `FixedNoiseBlock`. Edits to `block.py` take effect cell by cell.
+3. **Run `wheel.ipynb`.** A `Wheel` on the same window, the covariance
+   registered as a `FixedNoiseBlock` (`role="noise"`), the block registered
+   on its grid with `role="signal"`, a chain collected through
+   `on_cycle_complete`, the posterior against a truth you type in, and a
+   trace plot.
 
 ## Setup
 
@@ -56,7 +58,8 @@ callable `psd(f_hz)` or one per channel, into a `Covariance` on that grid.
 
 Replace the model (`_template`, `initial_sample`, `sample`) and the checks'
 expectations (the grid, what the likelihood needs from the covariance). Keep
-the shape of the contract: a `BlockState` with a template on the input grid,
+the shape of the contract: a `BlockState` with a template on the input grid
+and no covariance (a signal block's noise model is a separate noise block),
 a complete state after a rejection too, draws from the supplied `rng`,
 diagnostics on `block.state` rather than in the ledger, and a fresh instance
 per campaign. Collect chains outside the block, as `wheel.ipynb` does. In
@@ -77,10 +80,10 @@ window length divided by it must both be even integers, so choose
 num_frequency_divisions=..., num_time_divisions=...)`, which derives the
 duration), render `_template` on that grid, update `_check_residual`, and
 rewrite the likelihood in `sample` (`inner_product` is the frequency
-grid's). Every block receives the campaign's one
-covariance, so every block registers on its grid (a covariance does not
-translate between grids); another grid means moving `DOMAIN`, and with it
-the covariance, for the whole campaign.
+grid's). A signal block receives the sum of the noise blocks' covariances,
+which lives on one grid, so every block registers on that grid (a
+covariance does not translate between grids); another grid means moving
+`DOMAIN`, and with it the covariance, for the whole campaign.
 
 ## Caveats
 

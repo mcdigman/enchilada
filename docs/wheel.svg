@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1010" width="1000" height="1010" role="img" aria-label="The enchilada Wheel: blocks take turns around a hub that owns the data, residual, noise covariance and ledger. Each block receives the data minus every other block's signal and returns a BlockState that the Wheel validates and adopts atomically.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1010" width="1000" height="1010" role="img" aria-label="The enchilada Wheel: blocks take turns around a hub that owns the data, residual, sum of noise covariances and ledger. Each block receives the data minus every other block's signal and returns a BlockState that the Wheel validates and adopts atomically.">
 <title>enchilada: one Gibbs cycle around the Wheel</title>
 <defs>
 <marker id="m-in" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c5550"/></marker>
@@ -55,13 +55,13 @@
 <text x="484" y="201.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" fill="#5c5550" text-anchor="end">sample(</text>
 <text x="484" y="217.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#5c5550" text-anchor="end" font-style="italic">d − Σ<tspan dy="4" font-size="9">j≠i</tspan><tspan dy="-4"> T</tspan><tspan dy="4" font-size="9">j</tspan><tspan dy="-4" font-style="normal">, C, s</tspan><tspan dy="4" font-size="9">i</tspan><tspan dy="-4" font-style="normal">, rng)</tspan></text>
 <text x="516" y="201.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" fill="#c4521a">BlockState(</text>
-<text x="516" y="217.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#c4521a" font-style="italic">T<tspan dy="4" font-size="9">i</tspan><tspan dy="-4" font-style="normal">, </tspan>C<tspan font-style="normal">?, </tspan>θ<tspan dy="4" font-size="9">i</tspan><tspan dy="-4" font-style="normal">)</tspan></text>
+<text x="516" y="217.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#c4521a" font-style="italic">T<tspan dy="4" font-size="9">i</tspan><tspan dy="-4" font-style="normal">, </tspan>θ<tspan dy="4" font-size="9">i</tspan><tspan dy="-4" font-style="normal">)</tspan></text>
 <circle cx="500" cy="470" r="128" fill="#ffffff" stroke="#2a2522" stroke-width="2"/>
 <text x="500" y="398" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="21" font-weight="700" fill="#2a2522" text-anchor="middle">Wheel</text>
 <text x="500" y="415" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#6e655d" text-anchor="middle">wheel.py</text>
 <text x="500" y="448" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#2a2522" text-anchor="middle"><tspan font-style="italic" font-weight="700">d</tspan>  observed data</text>
 <text x="500" y="470" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#2a2522" text-anchor="middle"><tspan font-style="italic" font-weight="700">r</tspan> = <tspan font-style="italic">d</tspan> − Σ<tspan dy="4" font-size="9">j</tspan><tspan dy="-4" font-style="italic"> T</tspan><tspan dy="4" font-size="9">j</tspan><tspan dy="-4">  residual</tspan></text>
-<text x="500" y="492" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#2a2522" text-anchor="middle"><tspan font-style="italic" font-weight="700">C</tspan>  noise covariance</text>
+<text x="500" y="492" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#2a2522" text-anchor="middle"><tspan font-style="italic" font-weight="700">C</tspan>  sum of noise covariances</text>
 <text x="500" y="514" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#2a2522" text-anchor="middle"><tspan font-weight="700">Ledger</tspan>  name → BlockState</text>
 <text x="500" y="544" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#6e655d" text-anchor="middle" font-style="italic">validate, then commit all or nothing</text>
 <rect x="408.0" y="98.0" width="184" height="80" rx="12" fill="#c4521a"/>
@@ -87,7 +87,7 @@
 <text x="699.5" y="604.3" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="#86307f" text-anchor="middle">3</text>
 <rect x="408.0" y="762.0" width="184" height="80" rx="12" fill="#b31d4c"/>
 <text x="500.0" y="789.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle">noise</text>
-<text x="500.0" y="808.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#ffffff" text-anchor="middle" fill-opacity="0.92">publishes covariance C</text>
+<text x="500.0" y="808.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#ffffff" text-anchor="middle" fill-opacity="0.92">publishes its share of C</text>
 <rect x="475.0" y="816.0" width="50" height="17" rx="8.5" fill="#ffffff" fill-opacity="0.2" stroke="#ffffff" stroke-opacity="0.75" stroke-width="1"/>
 <text x="500.0" y="828.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#ffffff" text-anchor="middle">State</text>
 <circle cx="412.0" cy="766.0" r="11.5" fill="#ffffff" stroke="#b31d4c" stroke-width="2"/>
@@ -101,7 +101,7 @@
 <text x="124.5" y="604.3" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="#1d5b6f" text-anchor="middle">5</text>
 <rect x="120.5" y="264.0" width="184" height="80" rx="12" fill="#ffffff" stroke="#6e655d" stroke-width="1.8" stroke-dasharray="6 4"/>
 <text x="212.5" y="291.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#2a2522" text-anchor="middle">+ your block</text>
-<text x="212.5" y="310.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11.5" fill="#2a2522" text-anchor="middle">wheel.add(block, …)</text>
+<text x="212.5" y="310.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11.5" fill="#2a2522" text-anchor="middle">wheel.add(block, role=…)</text>
 <rect x="187.5" y="318.0" width="50" height="17" rx="8.5" fill="#6e655d" fill-opacity="0.12" stroke="#6e655d" stroke-opacity="0.75" stroke-width="1"/>
 <text x="212.5" y="330.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#2a2522" text-anchor="middle">State</text>
 <circle cx="124.5" cy="268.0" r="11.5" fill="#ffffff" stroke="#6e655d" stroke-width="2"/>
@@ -126,11 +126,11 @@
 <text x="32" y="878" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" letter-spacing="0.6" fill="#2a2522">HUB</text>
 <text x="32" y="900" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" fill="#2a2522">wheel.py<tspan font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" fill="#6e655d">  turns, adoption</tspan></text>
 <text x="32" y="919" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" fill="#2a2522">ledger.py<tspan font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" fill="#6e655d">  accepted states</tspan></text>
-<text x="32" y="938" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" fill="#2a2522">_signal_sum.py<tspan font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" fill="#6e655d">  Σ T tree</tspan></text>
+<text x="32" y="938" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" fill="#2a2522">_sum_tree.py<tspan font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" fill="#6e655d">  Σ T, Σ C trees</tspan></text>
 <text x="250" y="878" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" letter-spacing="0.6" fill="#2a2522">DATA AND NOISE</text>
 <text x="250" y="900" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" fill="#2a2522">data.py<tspan font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" fill="#6e655d">  L1Data: d, r</tspan></text>
 <text x="250" y="919" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" fill="#2a2522">covariance.py<tspan font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" fill="#6e655d">  C</tspan></text>
-<text x="250" y="938" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" fill="#2a2522">translated_covariance.py<tspan font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" fill="#6e655d">  C, translated</tspan></text>
+<text x="250" y="938" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" fill="#2a2522">fixed_noise.py<tspan font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" fill="#6e655d">  FixedNoiseBlock</tspan></text>
 <text x="250" y="957" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" fill="#2a2522">orbits.py<tspan font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" fill="#6e655d">  ephemeris</tspan></text>
 <text x="548" y="878" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" letter-spacing="0.6" fill="#8a5a1e">TRANSLATION RING</text>
 <text x="548" y="900" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" fill="#2a2522">translation.py<tspan font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" fill="#6e655d">  transform()</tspan></text>

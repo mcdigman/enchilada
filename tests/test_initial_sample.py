@@ -1,6 +1,5 @@
 """Wheel.add draws a block's start from initial_sample and adopts it like a sample."""
 
-import warnings
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 
@@ -12,8 +11,8 @@ from enchilada import (
     Block,
     BlockState,
     Covariance,
+    FixedNoiseBlock,
     L1Data,
-    NoiseOverwrittenWarning,
     Wheel,
     transform,
 )
@@ -104,7 +103,7 @@ def test_block_without_initial_sample_is_refused(observed):
     wheel = Wheel(observed, random_seed=1)
     before = deepcopy(wheel._rng.bit_generator.state)
     with pytest.raises(TypeError, match="does not implement initial_sample"):
-        wheel.add(SampleOnly())
+        wheel.add(SampleOnly(), role="signal")
     assert len(wheel.ledger) == 0
     assert wheel._blocks == []
     assert wheel._rng.bit_generator.state == before
@@ -126,7 +125,7 @@ def test_registration_calls_initial_sample_once_with_the_block_inputs(observed):
 
     wheel = Wheel(observed, random_seed=5)
     block = ChecksAliasing()
-    wheel.add(block)
+    wheel.add(block, role="signal")
     assert len(block.state.starts) == 1
     residual, covariance, rng = block.state.starts[0]
     np.testing.assert_array_equal(residual.channel_data["A"], 5.0)
@@ -142,13 +141,15 @@ def test_registration_calls_initial_sample_once_with_the_block_inputs(observed):
 
 
 def test_initial_sample_receives_the_campaign_covariance(observed):
-    wheel = Wheel(observed, initial_covariance=white_covariance(observed, 0.25))
+    wheel = Wheel(observed)
+    wheel.add(FixedNoiseBlock("noise", white_covariance(observed, 0.25)), role="noise")
     block = StartingBlock()
-    wheel.add(block)
+    wheel.add(block, role="signal")
     _, covariance, _ = block.state.starts[0]
     assert isinstance(covariance, Covariance)
     np.testing.assert_array_equal(covariance.A, 0.25)
-    assert covariance is not wheel._covariance
+    assert covariance is not wheel._noise_sum.total
+    assert not covariance.blocks.flags.writeable
 
 
 def test_initial_sample_consumes_the_campaign_rng_reproducibly(observed):
@@ -159,7 +160,7 @@ def test_initial_sample_consumes_the_campaign_rng_reproducibly(observed):
 
     def start(seed, block):
         wheel = Wheel(observed, random_seed=seed)
-        wheel.add(block)
+        wheel.add(block, role="signal")
         wheel.run(1)
         return wheel.ledger["starting"].parameters["amplitude"], block.state.draw
 
@@ -196,7 +197,7 @@ def test_initial_sample_receives_inputs_on_the_selected_grid_and_round_trips(
     block_options = {"num_time_divisions": 4} if block_domain == "wdm" else {}
     wheel = Wheel(canonical, random_seed=23)
     block = StartingBlock()
-    wheel.add(block, data_domain=block_domain, **block_options)
+    wheel.add(block, role="signal", data_domain=block_domain, **block_options)
     residual, _, _ = block.state.starts[0]
     assert residual.data_domain == (block_domain or canonical_domain)
     if block_domain == "wdm":
@@ -218,28 +219,38 @@ def test_initial_sample_receives_inputs_on_the_selected_grid_and_round_trips(
 def test_adopted_start_is_an_independent_snapshot(observed):
     returned = {}
 
-    class NoisyStart(StartingBlock):
+    class RememberedStart(StartingBlock):
         def initial_sample(self, conditional_residual, covariance, *, rng):
             start = replace(
                 super().initial_sample(conditional_residual, covariance, rng=rng),
-                covariance=white_covariance(conditional_residual, 0.25),
                 parameters={"amplitude": 2.0, "positions": [np.array([1, 2])]},
             )
             returned["start"] = start
             return start
 
+    class RememberedNoise(StartingBlock):
+        name = "noise"
+
+        def initial_sample(self, conditional_residual, covariance, *, rng):
+            start = BlockState(covariance=white_covariance(conditional_residual, 0.25))
+            returned["noise"] = start
+            return start
+
     wheel = Wheel(observed)
-    wheel.add(NoisyStart())
+    wheel.add(RememberedNoise(), role="noise")
+    wheel.add(RememberedStart(), role="signal")
     start = returned["start"]
     start.template["A"][:] = 100
     start.parameters["amplitude"] = 100
     start.parameters["positions"][0][:] = 100
-    start.covariance.blocks.setflags(write=True)
-    start.covariance.A[:] = 100
+    noise = returned["noise"]
+    noise.covariance.blocks.setflags(write=True)
+    noise.covariance.A[:] = 100
     accepted = wheel.ledger["starting"]
     assert accepted.parameters["amplitude"] == 2.0
     np.testing.assert_array_equal(accepted.parameters["positions"][0], [1, 2])
     np.testing.assert_array_equal(wheel.contribution("starting")["A"], 2)
+    np.testing.assert_array_equal(wheel.ledger["noise"].covariance.A, 0.25)
     np.testing.assert_array_equal(wheel.covariance.A, 0.25)
 
 
@@ -270,10 +281,9 @@ def test_failed_initial_sample_leaves_registration_and_rng_unchanged(
                 good.template["A"][1] = np.nan
                 return good
             if failure == "covariance":
-                shorter = replace(
-                    observed, channel_data={"A": np.full(32, 5.0)}, num_time_samples=32
+                return replace(
+                    good, covariance=white_covariance(conditional_residual, 1.0)
                 )
-                return replace(good, covariance=white_covariance(shorter, 1.0))
             return replace(good, parameters={"amplitude": CannotCopy()})
 
     # Each kind has its own error, so one failure cannot pass for another.
@@ -282,21 +292,22 @@ def test_failed_initial_sample_leaves_registration_and_rng_unchanged(
         "type": (TypeError, "starting.initial_sample must return a BlockState"),
         "shape": (ValueError, "length 3, expected"),
         "nonfinite": (ValueError, "finite"),
-        "covariance": (ValueError, "covariance is on grid"),
+        "covariance": (ValueError, "registered as a signal block"),
         "copy": (RuntimeError, "start state cannot be copied"),
     }[failure]
     wheel = Wheel(observed, random_seed=7)
     before = deepcopy(wheel._rng.bit_generator.state)
     with pytest.raises(expected, match=message):
-        wheel.add(FailingStart(), data_domain=block_domain)
+        wheel.add(FailingStart(), role="signal", data_domain=block_domain)
     assert len(wheel.ledger) == 0
     assert wheel._blocks == []
     assert wheel._block_domains == {}
+    assert wheel._roles == {}
     assert wheel._rng.bit_generator.state == before
     np.testing.assert_array_equal(wheel.residual().channel_data["A"], 5)
     # The same name can be retried, and the discarded draw never reached the RNG.
     block = StartingBlock()
-    wheel.add(block, data_domain=block_domain)
+    wheel.add(block, role="signal", data_domain=block_domain)
     wheel.run(1)
     assert block.state.draw == np.random.default_rng(7).normal()
 
@@ -325,25 +336,28 @@ def test_start_without_signal_can_sample_in_selected_domain(observed, with_noise
             assert conditional_residual.data_domain == "frequency"
             assert current_block_state.template is None
             assert current_block_state.parameters == {"variance": 0.25}
+            # The only noise block receives no sum; its own model is on its state.
+            assert covariance is None
             if with_noise:
                 current_block_state.covariance.check_compatible(conditional_residual)
-                covariance.check_compatible(conditional_residual)
-                np.testing.assert_allclose(covariance.A, 100.0)
+                np.testing.assert_allclose(current_block_state.covariance.A, 100.0)
             self.state.counter += 1
             return current_block_state
 
     wheel = Wheel(observed)
     block = NoiseOrNothing()
-    wheel.add(block, data_domain="frequency")
+    wheel.add(block, role="noise" if with_noise else "signal", data_domain="frequency")
     wheel.run(1)
     assert block.state.counter == 1
     np.testing.assert_array_equal(wheel.residual().channel_data["A"], 5)
     if with_noise:
         np.testing.assert_allclose(wheel.covariance.A, 100.0)
         assert wheel.covariance.grid == observed.to_frequency().grid
+    else:
+        assert wheel.covariance is None
 
 
-def test_noise_only_start_establishes_covariance_owner(observed):
+def test_a_noise_block_must_publish_a_covariance_on_every_call(observed):
     class DropsNoise(StartingBlock):
         def initial_sample(self, conditional_residual, covariance, *, rng):
             return BlockState(
@@ -355,31 +369,36 @@ def test_noise_only_start_establishes_covariance_owner(observed):
             return BlockState(parameters={"variance": 0.25})
 
     wheel = Wheel(observed)
-    wheel.add(DropsNoise())
+    wheel.add(DropsNoise(), role="noise")
     np.testing.assert_array_equal(wheel.residual().channel_data["A"], 5)
     np.testing.assert_array_equal(wheel.covariance.A, 0.25)
-    with pytest.raises(ValueError, match="owns the current covariance"):
+    with pytest.raises(
+        ValueError,
+        match="starting.sample must return a covariance because 'starting' is "
+        "registered as a noise block",
+    ):
         wheel.run(1)
-    assert wheel.ledger["starting"].covariance is not None
+    np.testing.assert_array_equal(wheel.ledger["starting"].covariance.A, 0.25)
+    np.testing.assert_array_equal(wheel.covariance.A, 0.25)
 
 
-def test_start_noise_takeover_warning_can_fail_atomically(observed):
+def test_two_noise_starts_add_and_the_second_receives_the_first(observed):
     wheel = Wheel(observed, random_seed=3)
     first, second = noise_start(1.0), noise_start(2.0)
     first.name, second.name = "first", "second"
-    wheel.add(first)
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", NoiseOverwrittenWarning)
-        with pytest.raises(NoiseOverwrittenWarning, match="second.initial_sample"):
-            wheel.add(second)
-    assert list(wheel.ledger) == ["first"]
-    assert "second" not in wheel._block_domains
-    np.testing.assert_array_equal(wheel.covariance.A, 1.0)
+    wheel.add(first, role="noise")
+    wheel.add(second, role="noise")
+    assert first.state.starts[0][1] is None  # alone when it started
+    np.testing.assert_array_equal(second.state.starts[0][1].A, 1.0)
+    assert list(wheel.ledger) == ["first", "second"]
+    np.testing.assert_array_equal(wheel.ledger["first"].covariance.A, 1.0)
+    np.testing.assert_array_equal(wheel.ledger["second"].covariance.A, 2.0)
+    np.testing.assert_array_equal(wheel.covariance.A, 3.0)
 
 
 def test_check_block_can_exercise_a_configured_start(observed):
     block = StartingBlock(amplitude=4.0)
-    check_block(block, observed, num_cycles=2)
+    check_block(block, observed, num_cycles=2, role="signal")
     assert len(block.state.starts) == 1
     assert block.state.counter == 2
     np.testing.assert_array_equal(block.state.starts[0][0].channel_data["A"], 5.0)
@@ -389,8 +408,8 @@ def test_later_blocks_start_from_the_residual_of_earlier_starts(observed):
     wheel = Wheel(observed)
     first, second = StartingBlock(amplitude=2.0), StartingBlock(amplitude=1.0)
     first.name, second.name = "first", "second"
-    wheel.add(first)
-    wheel.add(second, data_domain="frequency")
+    wheel.add(first, role="signal")
+    wheel.add(second, role="signal", data_domain="frequency")
     first_residual = first.state.starts[0][0]
     second_residual = second.state.starts[0][0]
     np.testing.assert_array_equal(first_residual.channel_data["A"], 5.0)
@@ -400,17 +419,18 @@ def test_later_blocks_start_from_the_residual_of_earlier_starts(observed):
 
 
 def test_covariance_on_another_grid_is_refused_at_add(observed):
-    wheel = Wheel(observed, white_covariance(observed, 0.25), random_seed=3)
+    wheel = Wheel(observed, random_seed=3)
+    wheel.add(FixedNoiseBlock("noise", white_covariance(observed, 0.25)), role="noise")
     block = StartingBlock()
     before = deepcopy(wheel._rng.bit_generator.state)
     with pytest.raises(ValueError, match="does not translate between grids") as info:
-        wheel.add(block, data_domain="frequency")
+        wheel.add(block, role="signal", data_domain="frequency")
     message = str(info.value)
     assert "'starting'" in message
     assert "data_domain='frequency'" in message and "data_domain='time'" in message
     assert "Register the block on the covariance's grid" in message
     assert block.state.starts == []
-    assert len(wheel.ledger) == 0
+    assert list(wheel.ledger) == ["noise"]
     assert wheel._rng.bit_generator.state == before
     assert wheel.covariance.grid == observed.grid
 
@@ -419,8 +439,8 @@ def test_start_that_publishes_a_covariance_is_handed_to_the_next_block(observed)
     wheel = Wheel(observed)
     noise, signal = noise_start(0.5), StartingBlock()
     noise.name = "noise"
-    wheel.add(noise)
-    wheel.add(signal)
+    wheel.add(noise, role="noise")
+    wheel.add(signal, role="signal")
     _, covariance, _ = signal.state.starts[0]
     np.testing.assert_array_equal(covariance.A, 0.5)
     assert covariance.grid == observed.grid
