@@ -22,9 +22,9 @@ from enchilada import (
     transform,
 )
 
+# A one-sided PSD: frequencies in Hz (an array) -> PSD values of the same
+# shape, or one scalar for a white PSD.
 PSD = Callable[[np.ndarray], np.ndarray]
-"""A one-sided PSD: frequencies in Hz (an array) -> PSD values of the same
-shape, or one scalar for a white PSD."""
 
 
 def _sampling_interval_s(path: str | os.PathLike[str]) -> float:
