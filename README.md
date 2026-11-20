@@ -437,6 +437,15 @@ the test campaign and also drives `initial_sample`; the defaults are shown
 above. Each model must independently validate its prior, likelihood, and
 sampler; see the conjugate example in `examples/toy_fit.py`.
 
+### Forging a new block
+
+The [`forge/`](forge/README.md) folder is a workbench for this: a skeleton
+`ForgeBlock` with its methods marked `# EDIT`, a `data.py` that loads a
+window of a simulated Mojito-layout L1 file onto the block's grid and builds
+an analytic-PSD `Covariance` there, and two notebooks that exercise the block
+by hand, run `check_block` and run a short campaign. Copy the folder once per
+block; its README has the steps and the caveats.
+
 ## Time, frequency, and WDM translation
 
 Use one wrapper for observations and block states:
@@ -724,8 +733,8 @@ uv sync --extra numeric-orbits --extra mojito   # dev group (pytest, pytest-cov,
 uv run --no-sync pytest                    # full suite, incl. examples, orbit and Mojito loaders
 uv run --no-sync pytest --cov --cov-report=term-missing   # coverage (gate: 95%)
 uv run --no-sync mypy                      # enchilada ships py.typed; keep it honest
-uv run --no-sync ruff check src tests examples benchmarks
-uv run --no-sync ruff format --check src tests examples benchmarks   # CI gates on this too
+uv run --no-sync ruff check src tests examples benchmarks forge
+uv run --no-sync ruff format --check src tests examples benchmarks forge   # CI gates on this too
 ```
 
 CI runs lint, formatting, mypy, the suite behind a 95% coverage gate, artifact

@@ -39,8 +39,8 @@ jobs:
           version: ${{ env.UV_VERSION }}
           python-version: ${{ matrix.python-version }}
       - run: uv sync --locked --extra numeric-orbits --extra mojito
-      - run: uv run --no-sync ruff check src tests examples benchmarks
-      - run: uv run --no-sync ruff format --check src tests examples benchmarks
+      - run: uv run --no-sync ruff check src tests examples benchmarks forge
+      - run: uv run --no-sync ruff format --check src tests examples benchmarks forge
       - run: uv run --no-sync mypy
       - run: uv run --no-sync pytest -q --cov
 

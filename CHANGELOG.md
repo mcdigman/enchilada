@@ -51,6 +51,14 @@ All notable changes to enchilada are documented here. The format follows
   registered first with `role="noise"`.
 - `examples/noise_floor.py`: a known floor (`FixedNoiseBlock`) plus a sampled
   excess variance as two noise blocks, with `tests/test_noise_floor_example.py`.
+- `forge/`: a workbench for building blocks against simulated Mojito-layout
+  L1 data. `forge/data.py` loads a decimated window onto the time, frequency
+  or WDM grid (`load_window`) and builds a `Covariance` from an analytic PSD
+  (`white_psd`, `analytic_covariance`); `forge/block.py` is a skeleton
+  `ForgeBlock` (a frequency-grid sinusoid with a conjugate sampler) whose
+  `# EDIT` methods the author replaces; `block.ipynb` and `wheel.ipynb`
+  exercise it by hand, through `check_block` and in a short campaign;
+  `tests/test_forge.py` runs all of it on a synthetic Mojito-layout file.
 
 ### Changed
 
